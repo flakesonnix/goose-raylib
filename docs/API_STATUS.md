@@ -95,12 +95,33 @@ Status values:
 
 ## Phase C — audio and input
 
-| raylib C API | Goose name | Status |
-|---|---|---|
-| `InitAudioDevice` | `init_audio_device` | planned |
-| `LoadSound` | `load_sound` | planned |
-| `PlaySound` | `play_sound` | planned |
-| `UnloadSound` | `unload_sound` | planned |
+| raylib C API | Goose name | Status | Note |
+|---|---|---|---|
+| `InitAudioDevice` | `init_audio_device` | implemented | tested |
+| `CloseAudioDevice` | `close_audio_device` | implemented | tested |
+| `IsAudioDeviceReady` | `is_audio_device_ready` | implemented | tested |
+| `LoadSound` | `load_sound` | implemented | returns Sound handle (i32), via C adapter |
+| `UnloadSound` | `unload_sound` | implemented | via C adapter handle table |
+| `PlaySound` | `play_sound` | implemented | via C adapter handle table |
+| `StopSound` | `stop_sound` | implemented | via C adapter handle table |
+| `PauseSound` | `pause_sound` | implemented | via C adapter handle table |
+| `ResumeSound` | `resume_sound` | implemented | via C adapter handle table |
+| `IsSoundPlaying` | `is_sound_playing` | implemented | via C adapter handle table |
+| `SetSoundVolume` | `set_sound_volume` | implemented | via C adapter handle table |
+| `SetSoundPitch` | `set_sound_pitch` | implemented | via C adapter handle table |
+| `SetSoundPan` | `set_sound_pan` | implemented | via C adapter handle table |
+| `LoadMusicStream` | `load_music_stream` | planned | Music struct has pointer fields |
+| `UnloadMusicStream` | `unload_music_stream` | planned | Music struct has pointer fields |
+| `PlayMusicStream` | `play_music_stream` | planned | |
+| `UpdateMusicStream` | `update_music_stream` | planned | |
+| Gamepad APIs | `is_gamepad_available`, etc. | planned | |
+
+### Sound handle system
+
+`Sound` is an opaque handle (`Sound { id: i32 }`) managed by the C adapter.
+raylib's `Sound` struct contains an `AudioStream` with pointer fields, so it
+cannot be copied by value across the Goose/C ABI.  The adapter keeps a static
+table of up to 64 loaded Sounds and hands out numeric handles.
 
 ## Phase D — 3D
 

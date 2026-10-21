@@ -437,6 +437,15 @@ struct Image { width: i32, height: i32, mipmaps: i32, format: i32 }
  */
 struct Texture2D { id: u32, width: i32, height: i32, mipmaps: i32, format: i32 }
 
+/*
+ * Sound — opaque handle (i32) managed by the C adapter.
+ * raylib's Sound contains an AudioStream with pointer fields, so it cannot
+ * be copied by value across the ABI.  The adapter keeps a static table of
+ * loaded Sounds and hands out numeric handles.  Goose code only sees the
+ * handle; use load_sound() to create one and unload_sound() to free it.
+ */
+struct Sound { id: i32 }
+
 // ============================================================================
 // Image metadata — via C adapter (Goose slice → null-terminated C string)
 // ============================================================================
@@ -489,5 +498,79 @@ fn draw_texture_ex(texture: Texture2D, pos_x: i32, pos_y: i32, rotation: f32, sc
 
 fn draw_texture_rec(texture: Texture2D, source_x: i32, source_y: i32, source_w: i32, source_h: i32, pos_x: i32, pos_y: i32, tint: Color) {
     rl_draw_texture_rec(texture, source_x, source_y, source_w, source_h, pos_x, pos_y, tint);
+}
+
+// ============================================================================
+// Audio (Phase C)
+// ============================================================================
+
+extern fn rl_init_audio_device();
+extern fn rl_close_audio_device();
+extern fn rl_is_audio_device_ready() -> bool;
+extern fn rl_load_sound(file_name: const u8[:]) -> i32;
+extern fn rl_unload_sound(handle: i32);
+extern fn rl_play_sound(handle: i32);
+extern fn rl_stop_sound(handle: i32);
+extern fn rl_pause_sound(handle: i32);
+extern fn rl_resume_sound(handle: i32);
+extern fn rl_is_sound_playing(handle: i32) -> bool;
+extern fn rl_set_sound_volume(handle: i32, volume: f32);
+extern fn rl_set_sound_pitch(handle: i32, pitch: f32);
+extern fn rl_set_sound_pan(handle: i32, pan: f32);
+
+// ============================================================================
+// Goose wrappers — snake_case, idiomatic
+// ============================================================================
+
+fn init_audio_device() {
+    rl_init_audio_device();
+}
+
+fn close_audio_device() {
+    rl_close_audio_device();
+}
+
+fn is_audio_device_ready() -> bool {
+    return rl_is_audio_device_ready();
+}
+
+fn load_sound(file_name: const u8[:]) -> Sound {
+    return Sound { rl_load_sound(file_name) };
+}
+
+fn unload_sound(sound: Sound) {
+    rl_unload_sound(sound.id);
+}
+
+fn play_sound(sound: Sound) {
+    rl_play_sound(sound.id);
+}
+
+fn stop_sound(sound: Sound) {
+    rl_stop_sound(sound.id);
+}
+
+fn pause_sound(sound: Sound) {
+    rl_pause_sound(sound.id);
+}
+
+fn resume_sound(sound: Sound) {
+    rl_resume_sound(sound.id);
+}
+
+fn is_sound_playing(sound: Sound) -> bool {
+    return rl_is_sound_playing(sound.id);
+}
+
+fn set_sound_volume(sound: Sound, volume: f32) {
+    rl_set_sound_volume(sound.id, volume);
+}
+
+fn set_sound_pitch(sound: Sound, pitch: f32) {
+    rl_set_sound_pitch(sound.id, pitch);
+}
+
+fn set_sound_pan(sound: Sound, pan: f32) {
+    rl_set_sound_pan(sound.id, pan);
 }
 
