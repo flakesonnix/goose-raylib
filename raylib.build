@@ -1,0 +1,4 @@
+// raylib.build — Goose C sidecar for goose-raylib
+// Links libraylib (provided via Nix devShell or system).
+
+c_libs = ["raylib"];
