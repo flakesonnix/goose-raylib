@@ -1,0 +1,4 @@
+// test_strings.build — C sidecar for test_strings.goose
+c_sources = ["src/raylib_adapter.c"];
+c_include = ["src"];
+c_libs = ["raylib"];
