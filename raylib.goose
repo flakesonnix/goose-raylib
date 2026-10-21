@@ -393,3 +393,101 @@ fn get_mouse_x() -> i32 {
 fn get_mouse_y() -> i32 {
     return GetMouseY();
 }
+
+// ============================================================================
+// Constants — PixelFormat (raylib)
+// ============================================================================
+
+const PIXELFORMAT_UNCOMPRESSED_GRAYSCALE: i32 = 1;
+const PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA: i32 = 2;
+const PIXELFORMAT_UNCOMPRESSED_R5G6B5: i32 = 3;
+const PIXELFORMAT_UNCOMPRESSED_R8G8B8: i32 = 4;
+const PIXELFORMAT_UNCOMPRESSED_R5G5B5A1: i32 = 5;
+const PIXELFORMAT_UNCOMPRESSED_R4G4B4A4: i32 = 6;
+const PIXELFORMAT_UNCOMPRESSED_R8G8B8A8: i32 = 7;
+const PIXELFORMAT_UNCOMPRESSED_R32: i32 = 8;
+const PIXELFORMAT_UNCOMPRESSED_R32G32B32: i32 = 9;
+const PIXELFORMAT_UNCOMPRESSED_R32G32B32A32: i32 = 10;
+const PIXELFORMAT_COMPRESSED_DXT1_RGB: i32 = 11;
+const PIXELFORMAT_COMPRESSED_DXT1_RGBA: i32 = 12;
+const PIXELFORMAT_COMPRESSED_DXT3_RGBA: i32 = 13;
+const PIXELFORMAT_COMPRESSED_DXT5_RGBA: i32 = 14;
+const PIXELFORMAT_COMPRESSED_ETC1_RGB: i32 = 15;
+const PIXELFORMAT_COMPRESSED_ETC2_RGB: i32 = 16;
+const PIXELFORMAT_COMPRESSED_ETC2_EAC_RGBA: i32 = 17;
+const PIXELFORMAT_COMPRESSED_PVRT_RGB: i32 = 18;
+const PIXELFORMAT_COMPRESSED_PVRT_RGBA: i32 = 19;
+const PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA: i32 = 20;
+const PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA: i32 = 21;
+
+// ============================================================================
+// Structs — Image and Texture2D (Phase B)
+// ============================================================================
+
+/*
+ * Image — Goose-compatible copy of raylib Image without the void *data pointer.
+ * Goose cannot hold raw C pointers, so only metadata is exposed.
+ * Use rl_image_width/height/format to query image properties from file.
+ */
+struct Image { width: i32, height: i32, mipmaps: i32, format: i32 }
+
+/*
+ * Texture2D — 1:1 copy of raylib Texture2D (packed, no padding).
+ * C layout: { u32 id, i32 width, i32 height, i32 mipmaps, i32 format }
+ */
+struct Texture2D { id: u32, width: i32, height: i32, mipmaps: i32, format: i32 }
+
+// ============================================================================
+// Image metadata — via C adapter (Goose slice → null-terminated C string)
+// ============================================================================
+
+extern fn rl_image_width(file_name: const u8[:]) -> i32;
+extern fn rl_image_height(file_name: const u8[:]) -> i32;
+extern fn rl_image_format(file_name: const u8[:]) -> i32;
+
+// ============================================================================
+// Texture2D — via C adapter (Goose slice → null-terminated C string)
+// ============================================================================
+
+extern fn rl_load_texture(file_name: const u8[:]) -> Texture2D;
+extern fn rl_unload_texture(texture: Texture2D);
+extern fn rl_draw_texture(texture: Texture2D, pos_x: i32, pos_y: i32, tint: Color);
+extern fn rl_draw_texture_ex(texture: Texture2D, pos_x: i32, pos_y: i32, rotation: f32, scale: f32, tint: Color);
+extern fn rl_draw_texture_rec(texture: Texture2D, source_x: i32, source_y: i32, source_w: i32, source_h: i32, pos_x: i32, pos_y: i32, tint: Color);
+
+// ============================================================================
+// Goose wrappers — snake_case, idiomatic
+// ============================================================================
+
+fn image_width(file_name: const u8[:]) -> i32 {
+    return rl_image_width(file_name);
+}
+
+fn image_height(file_name: const u8[:]) -> i32 {
+    return rl_image_height(file_name);
+}
+
+fn image_format(file_name: const u8[:]) -> i32 {
+    return rl_image_format(file_name);
+}
+
+fn load_texture(file_name: const u8[:]) -> Texture2D {
+    return rl_load_texture(file_name);
+}
+
+fn unload_texture(texture: Texture2D) {
+    rl_unload_texture(texture);
+}
+
+fn draw_texture(texture: Texture2D, pos_x: i32, pos_y: i32, tint: Color) {
+    rl_draw_texture(texture, pos_x, pos_y, tint);
+}
+
+fn draw_texture_ex(texture: Texture2D, pos_x: i32, pos_y: i32, rotation: f32, scale: f32, tint: Color) {
+    rl_draw_texture_ex(texture, pos_x, pos_y, rotation, scale, tint);
+}
+
+fn draw_texture_rec(texture: Texture2D, source_x: i32, source_y: i32, source_w: i32, source_h: i32, pos_x: i32, pos_y: i32, tint: Color) {
+    rl_draw_texture_rec(texture, source_x, source_y, source_w, source_h, pos_x, pos_y, tint);
+}
+

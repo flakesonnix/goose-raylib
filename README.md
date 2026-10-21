@@ -8,23 +8,24 @@ C adapter (`src/raylib_adapter.c`) bridges Goose slices to null-terminated C str
 
 ```
 goose-raylib/
-├── raylib.goose          # Goose bindings, namespace raylib (Phase A)
+├── raylib.goose          # Goose bindings, namespace raylib (Phases A + B)
 ├── raylib.build          # Goose C sidecar (for raylib.goose itself)
 ├── *.build               # C sidecars for examples and tests
 ├── flake.nix             # Nix devShell (cmake, gcc, raylib, git)
 ├── flake.lock            # pinned nixpkgs (reproducible)
 ├── src/
 │   ├── raylib_adapter.h  # C adapter header
-│   └── raylib_adapter.c  # C adapter impl (string conversion)
+│   └── raylib_adapter.c  # C adapter impl (strings, textures)
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
+├── textures.goose        # example: texture metadata queries (Phase B)
 ├── test_window.goose     # test: window constants
 ├── test_shapes.goose     # test: colors, structs
 ├── test_strings.goose    # test: string conversion (with libraylib)
 ├── test_input.goose      # test: input (with libraylib)
 ├── test_resources.goose  # test: Phase B (planned)
-├── examples/             # see your Pong repo for a full game example
+├── test_textures.goose   # test: texture/Image structs + pixel formats (Phase B)
 ├── docs/
 │   ├── ARCHITECTURE.md   # architecture & ABI risks
 │   └── API_STATUS.md     # implementation status
@@ -42,12 +43,15 @@ nix develop goose-raylib/                 # devShell: cmake, gcc, raylib, git
 goose build minimal.goose && ./minimal
 goose build shapes.goose && ./shapes
 goose build input.goose && ./input
-# Full Pong example: see your Pong repo (replace with your repo URL)
-# goose build <your-pong-main>.goose && ./<your-pong-main>
+goose build textures.goose && ./textures
+
+# Full Pong example: see your Pong repo
+# https://github.com/flakesonnix/goose-pong
 
 # Unit tests (with libraylib)
 goose build test_strings.goose && ./test_strings
 goose build test_input.goose && ./test_input
+goose build test_textures.goose && ./test_textures
 
 # Unit tests (without libraylib, pure logic)
 goose build test_window.goose && ./test_window
@@ -71,11 +75,12 @@ goose check raylib.goose
 
 ```bash
 Xvfb :99 -screen 0 800x450x16 & export DISPLAY=:99
-# Full Pong example: see your Pong repo (replace with your repo URL)
-# goose build <your-pong-main>.goose && ./<your-pong-main>
+goose build textures.goose && timeout 10 ./textures
 ```
 
-## API (Phase A — implemented and tested)
+## API
+
+### Phase A — implemented and tested
 
 ```goose
 import raylib;
@@ -106,6 +111,31 @@ raylib::close_window();
   `PURPLE`, `GRAY`, `LIGHTGRAY`, `DARKGRAY`, `SKYBLUE`, `DARKBLUE`, `DARKGREEN`, `DARKRED`,
   `KEY_*` (A–Z, 0–9, F1–F12, arrow keys, …), `MOUSE_*`
 
+### Phase B — implemented and tested
+
+```goose
+import raylib;
+
+// Query image metadata without keeping the C Image around
+let w = raylib::image_width("assets/logo.png");
+let h = raylib::image_height("assets/logo.png");
+
+// Load, draw, unload a texture
+let tex = raylib::load_texture("assets/logo.png");
+raylib::draw_texture(tex, 100, 100, raylib::WHITE);
+raylib::draw_texture_ex(tex, 200, 200, 45.0, 1.5, raylib::WHITE);
+raylib::draw_texture_rec(tex, 0, 0, 64, 64, 300, 300, raylib::WHITE);
+raylib::unload_texture(tex);
+```
+
+- **Image metadata:** `image_width`, `image_height`, `image_format` (loads + unloads
+  the C image internally; only metadata is returned, since Goose cannot hold raw pointers)
+- **Texture2D:** `load_texture`, `unload_texture`, `draw_texture`, `draw_texture_ex`,
+  `draw_texture_rec`
+- **Types:** `Image` (metadata only, no `void *data` pointer), `Texture2D`
+  (packed, 1:1 C layout)
+- **Constants:** `PIXELFORMAT_*` (UNCOMPRESSED_GRAYSCALE through COMPRESSED_ASTC_8x8_RGBA)
+
 See `docs/API_STATUS.md` for the full implementation status.
 
 ## Examples
@@ -115,6 +145,8 @@ A full **Pong** game built with goose-raylib lives in your Pong repo:
 https://github.com/flakesonnix/goose-pong
 
 ## Important notes
+
+- **No automatic resource cleanup:** Goose has no destructors/RAII.
   Resources (textures, sounds, …) must be explicitly released with `unload_*`.
 - **Strings:** Goose `const u8[:]` is converted to null-terminated C strings
   via the C adapter (`src/raylib_adapter.c`).
