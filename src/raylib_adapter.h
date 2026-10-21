@@ -30,4 +30,51 @@ void rl_draw_text(goose_slice_u8 text, int x, int y, int fontSize, Color color);
 int rl_measure_text(goose_slice_u8 text, int fontSize);
 void rl_set_window_title(goose_slice_u8 title);
 
+/* --- Texture2D (Phase B) --- */
+
+/*
+ * Goose-compatible copy of raylib Texture2D, without any pointer fields.
+ * Layout matches C: { u32 id, i32 width, i32 height, i32 mipmaps, i32 format }
+ */
+typedef struct {
+    unsigned int id;
+    int width;
+    int height;
+    int mipmaps;
+    int format;
+} goose_texture2d;
+
+/* Load a texture from file. Returns a goose_texture2d copy of the C struct. */
+goose_texture2d rl_load_texture(goose_slice_u8 fileName);
+
+/* Unload a texture previously loaded with rl_load_texture. */
+void rl_unload_texture(goose_texture2d texture);
+
+/* Draw a texture at a position with a tint color. */
+void rl_draw_texture(goose_texture2d texture, int posX, int posY, Color tint);
+
+/* Draw a texture extended (position, rotation, scale, tint). */
+void rl_draw_texture_ex(goose_texture2d texture, int posX, int posY, float rotation, float scale, Color tint);
+
+/* Draw a texture defined by a source rectangle. */
+void rl_draw_texture_rec(goose_texture2d texture, int sourceX, int sourceY, int sourceW, int sourceH, int posX, int posY, Color tint);
+
+/* --- Image (Phase B, metadata only) --- */
+
+/*
+ * Goose-compatible copy of raylib Image without the void *data pointer.
+ * Goose cannot hold raw C pointers, so only metadata is exposed.
+ */
+typedef struct {
+    int width;
+    int height;
+    int mipmaps;
+    int format;
+} goose_image;
+
+/* Query image dimensions from file without keeping the C Image around. */
+int rl_image_width(goose_slice_u8 fileName);
+int rl_image_height(goose_slice_u8 fileName);
+int rl_image_format(goose_slice_u8 fileName);
+
 #endif

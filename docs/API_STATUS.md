@@ -75,13 +75,23 @@ Status values:
 
 | raylib C API | Goose name | Status | Note |
 |---|---|---|---|
-| `LoadTexture` | `load_texture` | planned | string adapter + handle |
-| `UnloadTexture` | `unload_texture` | planned | explicit |
-| `DrawTexture` | `draw_texture` | planned | Texture2D by value |
-| `LoadImage` | `load_image` | planned | Image by value |
-| `UnloadImage` | `unload_image` | planned | |
-| `LoadFont` | `load_font` | planned | |
+| `LoadTexture` | `load_texture` | implemented | via C adapter (rl_load_texture) |
+| `UnloadTexture` | `unload_texture` | implemented | declared; not called on dummy ID (crash risk) |
+| `DrawTexture` | `draw_texture` | implemented | via C adapter (rl_draw_texture) |
+| `DrawTextureEx` | `draw_texture_ex` | implemented | via C adapter (rl_draw_texture_ex) |
+| `DrawTextureRec` | `draw_texture_rec` | implemented | via C adapter (rl_draw_texture_rec) |
+| `LoadImage` | — | blocked | void *data pointer not representable in Goose |
+| `UnloadImage` | — | blocked | void *data pointer not representable in Goose |
+| `LoadFont` | `load_font` | planned | Font struct has pointer fields |
 | `UnloadFont` | `unload_font` | planned | |
+
+### Image metadata queries
+
+| raylib C API | Goose name | Status | Note |
+|---|---|---|---|
+| `LoadImage` + read width | `image_width` | implemented | loads + unloads image, returns width |
+| `LoadImage` + read height | `image_height` | implemented | loads + unloads image, returns height |
+| `LoadImage` + read format | `image_format` | implemented | loads + unloads image, returns format |
 
 ## Phase C — audio and input
 
