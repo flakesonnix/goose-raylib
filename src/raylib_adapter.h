@@ -77,4 +77,36 @@ int rl_image_width(goose_slice_u8 fileName);
 int rl_image_height(goose_slice_u8 fileName);
 int rl_image_format(goose_slice_u8 fileName);
 
+/* --- Audio (Phase C) --- */
+
+/*
+ * Sound handle system.
+ *
+ * raylib's Sound struct contains an AudioStream with pointer fields, so it
+ * cannot be copied by value across the Goose/C ABI.  Instead the adapter
+ * keeps a static table of loaded Sounds and hands out numeric handles.
+ * Goose code only ever sees the handle (i32), never the raw C struct.
+ */
+
+#define RL_ADAPTER_MAX_SOUNDS 64
+
+typedef struct {
+    int in_use;
+    Sound sound;
+} goose_sound_slot;
+
+void rl_init_audio_device(void);
+void rl_close_audio_device(void);
+int rl_is_audio_device_ready(void);
+int rl_load_sound(goose_slice_u8 fileName);          // returns sound handle (i32), or -1 on failure
+void rl_unload_sound(int handle);
+void rl_play_sound(int handle);
+void rl_stop_sound(int handle);
+void rl_pause_sound(int handle);
+void rl_resume_sound(int handle);
+int rl_is_sound_playing(int handle);
+void rl_set_sound_volume(int handle, float volume);
+void rl_set_sound_pitch(int handle, float pitch);
+void rl_set_sound_pan(int handle, float pan);
+
 #endif

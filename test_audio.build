@@ -1,0 +1,4 @@
+// test_audio.build — C sidecar for test_audio.goose
+c_sources = ["src/raylib_adapter.c"];
+c_include = ["src"];
+c_libs = ["raylib"];

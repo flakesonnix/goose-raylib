@@ -98,3 +98,97 @@ int rl_image_format(goose_slice_u8 fileName) {
     UnloadImage(im);
     return f;
 }
+
+/* --- Audio --- */
+
+static goose_sound_slot rl_sound_slots[RL_ADAPTER_MAX_SOUNDS];
+
+static int rl_sound_alloc_slot(void) {
+    for (int i = 0; i < RL_ADAPTER_MAX_SOUNDS; i++) {
+        if (!rl_sound_slots[i].in_use) {
+            rl_sound_slots[i].in_use = 1;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static Sound *rl_sound_get(int handle) {
+    if (handle < 0 || handle >= RL_ADAPTER_MAX_SOUNDS) return NULL;
+    if (!rl_sound_slots[handle].in_use) return NULL;
+    return &rl_sound_slots[handle].sound;
+}
+
+void rl_init_audio_device(void) {
+    InitAudioDevice();
+}
+
+void rl_close_audio_device(void) {
+    CloseAudioDevice();
+}
+
+int rl_is_audio_device_ready(void) {
+    return IsAudioDeviceReady();
+}
+
+int rl_load_sound(goose_slice_u8 fileName) {
+    int handle = rl_sound_alloc_slot();
+    if (handle < 0) return -1;
+    rl_sound_slots[handle].sound = LoadSound(rl_to_c_string(fileName));
+    return handle;
+}
+
+void rl_unload_sound(int handle) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    UnloadSound(*s);
+    rl_sound_slots[handle].in_use = 0;
+}
+
+void rl_play_sound(int handle) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    PlaySound(*s);
+}
+
+void rl_stop_sound(int handle) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    StopSound(*s);
+}
+
+void rl_pause_sound(int handle) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    PauseSound(*s);
+}
+
+void rl_resume_sound(int handle) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    ResumeSound(*s);
+}
+
+int rl_is_sound_playing(int handle) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return 0;
+    return IsSoundPlaying(*s);
+}
+
+void rl_set_sound_volume(int handle, float volume) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    SetSoundVolume(*s, volume);
+}
+
+void rl_set_sound_pitch(int handle, float pitch) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    SetSoundPitch(*s, pitch);
+}
+
+void rl_set_sound_pan(int handle, float pan) {
+    Sound *s = rl_sound_get(handle);
+    if (s == NULL) return;
+    SetSoundPan(*s, pan);
+}

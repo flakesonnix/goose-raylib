@@ -26,6 +26,7 @@ goose-raylib/
 ├── test_input.goose      # test: input (with libraylib)
 ├── test_resources.goose  # test: Phase B (planned)
 ├── test_textures.goose   # test: texture/Image structs + pixel formats (Phase B)
+├── test_audio.goose      # test: Sound handle + audio device (Phase C)
 ├── docs/
 │   ├── ARCHITECTURE.md   # architecture & ABI risks
 │   └── API_STATUS.md     # implementation status
@@ -52,6 +53,7 @@ goose build textures.goose && ./textures
 goose build test_strings.goose && ./test_strings
 goose build test_input.goose && ./test_input
 goose build test_textures.goose && ./test_textures
+goose build test_audio.goose && ./test_audio
 
 # Unit tests (without libraylib, pure logic)
 goose build test_window.goose && ./test_window
@@ -135,6 +137,31 @@ raylib::unload_texture(tex);
 - **Types:** `Image` (metadata only, no `void *data` pointer), `Texture2D`
   (packed, 1:1 C layout)
 - **Constants:** `PIXELFORMAT_*` (UNCOMPRESSED_GRAYSCALE through COMPRESSED_ASTC_8x8_RGBA)
+
+### Phase C — implemented and tested
+
+```goose
+import raylib;
+
+// Initialize and query the audio device
+raylib::init_audio_device();
+let ready = raylib::is_audio_device_ready();
+
+// Load and play a sound (Sound is an opaque handle)
+let snd = raylib::load_sound("assets/jump.wav");
+raylib::play_sound(snd);
+raylib::set_sound_volume(snd, 0.7);
+raylib::set_sound_pitch(snd, 1.2);
+
+// Clean up
+raylib::unload_sound(snd);
+raylib::close_audio_device();
+```
+
+- **Audio device:** `init_audio_device`, `close_audio_device`, `is_audio_device_ready`
+- **Sound:** `load_sound`, `unload_sound`, `play_sound`, `stop_sound`, `pause_sound`,
+  `resume_sound`, `is_sound_playing`, `set_sound_volume`, `set_sound_pitch`, `set_sound_pan`
+- **Types:** `Sound` (opaque handle `Sound { id: i32 }`)
 
 See `docs/API_STATUS.md` for the full implementation status.
 
