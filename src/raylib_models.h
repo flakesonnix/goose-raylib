@@ -51,7 +51,7 @@ uint8_t grl_draw_mesh(uint64_t token, const void *transform, uint32_t rgba);
  * leaves a valid source intact, including when the model table is full. */
 uint64_t grl_load_model_from_mesh(uint64_t token);
 
-/* Explicit window shutdown releases managed models/meshes before destroying GL. */
+/* Explicit window shutdown ends texture mode and releases managed GPU owners. */
 void grl_close_window(void);
 
 #endif

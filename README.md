@@ -5,8 +5,8 @@ C-API to Goose via `extern fn`. raylib remains the native backend; only a small
 C adapter bridges Goose slices to null-terminated C strings and marshals the
 new 3D API without relying on packed-by-value C struct compatibility.
 
-**Current milestone:** 3D cameras, primitives, raymath and managed models/meshes,
-not the complete raylib API.
+**Current milestone:** 3D cameras, primitives, raymath, managed models/meshes
+and off-screen render textures, not the complete raylib API.
 The backend is raylib **6.2** (tag `6.2`, commit
 `02566453880e06bec97f5b8160fa6fe1e98397ca`), pinned in both the Nix flake
 and CMake's SHA256-checked source fallback.
@@ -26,7 +26,8 @@ goose-raylib/
 │   ├── raylib_adapter.c  # C adapter impl (strings, textures)
 │   ├── raylib_3d.c/h     # scalar/borrowed-pointer 3D boundary
 │   ├── raylib_math.c/h   # header-only raymath native wrappers
-│   └── raylib_models.c/h # generation-checked model/mesh ownership
+│   ├── raylib_models.c/h # generation-checked model/mesh ownership
+│   └── raylib_render_textures.c/h # owned FBOs and checked texture modes
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
@@ -34,6 +35,7 @@ goose-raylib/
 ├── cube3d.goose          # 3D camera, quaternion orbit, sphere/grid (120 frames)
 ├── models.goose          # managed generated cube, unload (120 frames)
 ├── meshes.goose          # generated meshes, exclusive model transfer (120 frames)
+├── render_texture.goose  # off-screen 3D and scaled composition (120 frames)
 ├── test_3d.goose         # headless Goose camera and value-layout tests
 ├── tests/               # C ABI, pixel readback, negative tests, test runner
 ├── test_window.goose     # test: window constants
@@ -64,6 +66,7 @@ goose build input.goose && ./input
 goose build cube3d.goose && ./cube3d
 goose build models.goose && ./models
 goose build meshes.goose && ./meshes
+goose build render_texture.goose && ./render_texture
 goose build textures.goose && ./textures
 
 # Full Pong example (developed separately):
@@ -118,6 +121,9 @@ texture deletion through OpenGL. The runner generates the small PNG under
 Mesh tests compare all seven generators' CPU data/bounds with direct raylib
 calls, compare a complete transformed framebuffer with native `DrawMesh`,
 and verify GPU-buffer ownership across mesh-to-model transfers.
+Render-target tests compare complete framebuffers with direct native draws,
+assert orientation/scale/rotation and off-screen 3D pixels, and check actual
+FBO, color-texture and depth-renderbuffer deletion.
 
 **JIT limitation:** the tested existing Goose build's embedded TinyCC cannot
 find `stdint.h` on NixOS. Native builds and the package's native symbol library
@@ -258,8 +264,9 @@ raylib::end_mode_3d();
   `_v` conveniences accept `Vector3`. The latter do not invent C symbols.
 - **Value types:** `Vector3`, `Ray`, `Camera3D`, `BoundingBox`, `Matrix`.
 - **Still planned:** arbitrary mesh upload/editing and remaining generators,
-  model animations, shaders/materials, render textures, automatic camera modes,
-  remaining raymath operations and public rlgl bindings. Phase D is not complete.
+  model animations, shaders/materials, additional render-target formats,
+  automatic camera modes, remaining raymath operations and public rlgl bindings.
+  Phase D is not complete.
 
 ### Managed models
 
@@ -302,7 +309,8 @@ assert(raylib::unload_model(model));
   deleted once and raylib's default texture/shader are preserved. Raw native
   `UnloadModel` does not release those material GPU resources itself.
 - Explicit `close_window()` (also `CloseWindow()`) releases remaining managed
-  models and standalone meshes **before** destroying the graphics context.
+  models, standalone meshes and render targets **before** destroying the
+  graphics context.
   This is not RAII and does not clean up legacy texture/sound handles. Do not
   bypass it through raw C window calls. Model resources cannot yet be lent
   or replaced.
@@ -367,6 +375,60 @@ assert(raylib::unload_model(model));
 - No borrowed model meshes/materials, arbitrary vertex access, buffer updates,
   instancing, tangents, exports, torus/knot, heightmap or cubicmap bindings yet.
 
+### Render textures
+
+`render_texture.goose` draws a 3D scene into a 320x180 target and composites
+it into the window at 2x scale. No assets or replacement renderer are used.
+
+```goose
+// After init_window(), outside any texture mode:
+let target = raylib::load_render_texture(160, 90);
+assert(raylib::is_render_texture_valid(target));
+assert(raylib::begin_texture_mode(target));
+raylib::clear_background(raylib::BLACK);
+raylib::draw_rectangle(0, 0, 160, 30, raylib::RED);
+assert(raylib::end_texture_mode());
+
+// Inside a window drawing frame: the convenience draw displays it upright.
+assert(raylib::draw_render_texture(target, 20, 20, raylib::WHITE));
+// After drawing, before close_window():
+assert(raylib::unload_render_texture(target));
+```
+
+- `RenderTexture2D { let id: u64 }` (`RenderTexture` is an alias) is a checked
+  generation/kind token, **not** the native struct or a raw framebuffer ID.
+  It owns its FBO, RGBA8 color texture and depth renderbuffer in C. Attachments
+  are not lent as legacy `Texture2D` values, preventing independent unloads.
+- `load_render_texture` needs a live window, dimensions **1–4096** and a free
+  slot among `MAX_RENDER_TEXTURES` (64). Invalid input, capacity exhaustion or
+  an invalid/incomplete native FBO returns `RenderTexture2D { 0 }`. Dimension
+  limits do not guarantee that a particular GPU can allocate every target.
+  `render_texture_width` / `render_texture_height` return zero for stale or
+  invalid tokens. Copies alias one target; generations survive window reopen.
+- `begin_texture_mode` / `end_texture_mode` return bool. Modes **do not nest**;
+  invalid/nested begins and an unmatched end fail without altering the current
+  target. `is_texture_mode_active` reports the managed mode. Normal raylib
+  frame/2D/3D ordering is still the caller's responsibility.
+- All target creation/unload operations are rejected while any managed texture
+  mode is active, even for another target: native loaders/unloaders change FBO
+  bindings. `unload_all_render_textures` returns zero when blocked. Drawing
+  another target into the active one is allowed; sampling the active target
+  into itself is rejected to avoid an undefined GPU feedback loop.
+- `draw_render_texture(target, x, y, tint)` calls `DrawTextureRec` with the
+  whole target and an automatic vertical flip, upright at 1:1 scale.
+  `draw_render_texture_pro(target, source, dest, origin, rotation, tint)`
+  retains native `DrawTexturePro` rectangle/origin conventions: use a **negative
+  source height** for upright FBO contents. Rotation is in **degrees**. It
+  rejects non-finite parameters; other native drawing preconditions remain.
+- `unload_render_texture` returns false for invalid/stale handles; bulk unload
+  returns the released count. Pending texture draws are flushed before GPU
+  attachments are deleted, including an unload before `end_drawing`. Explicit
+  `close_window()` / `CloseWindow()` ends an active managed texture mode and
+  releases all targets before destroying GL. There are still no destructors.
+- Custom target formats (`LoadRenderTextureEx`), raw/borrowed attachments,
+  attachment replacement, depth sampling and shader/material bindings remain
+  planned. Raw C framebuffer/mode manipulation bypasses this ownership contract.
+
 ### raymath — vectors, matrices and quaternions
 
 The optional `raylib.raymath` module has its own `raymath` namespace and uses
@@ -422,7 +484,8 @@ https://github.com/flakesonnix/goose-pong
 
 - **No automatic resource cleanup:** Goose has no destructors/RAII.
   Resources (textures, sounds, …) must be explicitly released with `unload_*`.
-  Managed models/meshes also have an explicit cleanup boundary at `close_window()`.
+  Managed models/meshes/render targets also have an explicit cleanup boundary
+  at `close_window()`.
 - **Strings:** Goose `const u8[:]` is converted to null-terminated C strings
   via the C adapter (`src/raylib_adapter.c`).
 - **Display:** Graphical programs need an X11/Wayland display.

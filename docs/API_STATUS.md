@@ -11,7 +11,7 @@ Status values:
 | raylib C API | Goose name | Module | Status | Note |
 |---|---|---|---|---|
 | `InitWindow` | `init_window` | window | implemented | tested under Xvfb (exit 0) |
-| `CloseWindow` | `close_window`, `CloseWindow` | window | implemented | releases managed models/meshes before closing GL; repeated close and reopen tested |
+| `CloseWindow` | `close_window`, `CloseWindow` | window | implemented | ends managed texture mode; frees models/meshes/render targets before GL closes; reopen tested |
 | `WindowShouldClose` | `window_should_close` | window | implemented | tested under Xvfb (exit 0) |
 | `SetTargetFPS` | `set_target_fps` | window | implemented | tested under Xvfb (exit 0) |
 | `SetWindowTitle` | `set_window_title` | window | implemented | via C adapter (rl_set_window_title) |
@@ -128,7 +128,7 @@ table of up to 64 loaded Sounds and hands out numeric handles.
 These are incremental 3D milestones, **not all of Phase D**. The backend is
 raylib **6.2**, tag `6.2`, commit `02566453880e06bec97f5b8160fa6fe1e98397ca`.
 Both the Nix lock and CMake fallback select this revision. The tables below
-inventory the added camera/primitive/model/mesh surface, not the entire public header.
+inventory the added camera/primitive/model/mesh/render-target surface, not the entire public header.
 
 | raylib C API | Goose name | Status | Coverage / difference |
 |---|---|---|---|
@@ -181,7 +181,16 @@ inventory the added camera/primitive/model/mesh surface, not the entire public h
 | Mesh table helpers (no direct C counterparts) | `is_mesh_valid`, `mesh_vertex_count`, `mesh_triangle_count`, `unload_all_meshes`, `MAX_MESHES`, `MAX_MESH_SUBDIVISIONS` | implemented | Kind/generation/window checks, counts, limits, retirement and independent model/mesh cleanup. |
 | `GenMeshTorus`, `GenMeshKnot`, `GenMeshHeightmap`, `GenMeshCubicmap` | — | planned | Remaining native generators. |
 | `UploadMesh`, `UpdateMeshBuffer`, `DrawMeshInstanced`, `GenMeshTangents`, mesh exports, model animations | — | planned | No arbitrary CPU arrays or borrowed native mesh/material handles exposed. |
-| Shaders, materials, render textures | — | planned | Not included here. |
+| `RenderTexture2D`, `RenderTexture` | same names | implemented | Read-only u64 kind/generation token and alias, not native by-value structs. |
+| `LoadRenderTexture` | `load_render_texture` | implemented | Real RGBA8/depth FBO, dimension/capacity/active-mode guards and native completeness validation. |
+| `IsRenderTextureValid` | `is_render_texture_valid` | implemented | Validates window/kind/generation before native metadata query; does not rebind the active FBO. |
+| `UnloadRenderTexture` | `unload_render_texture` | implemented | Flushes queued samples before native attachment deletion; FBO/color/depth GPU object queries verify cleanup. |
+| `BeginTextureMode`, `EndTextureMode` | `begin_texture_mode`, `end_texture_mode` | implemented | Bool, non-nesting guards, unmatched-end rejection and real viewport/projection restoration. |
+| `DrawTextureRec` using an owned render target | `draw_render_texture` | implemented | Convenience, not a C symbol; full target flipped upright at 1:1 scale; native image oracle and pixel tests. |
+| `DrawTexturePro` using an owned render target | `draw_render_texture_pro` | implemented | Scalar rectangle/origin/rotation ABI; full native framebuffer oracles for crop, flips, scale, tint and degree rotation. |
+| Render-target helpers (no direct C counterparts) | `render_texture_width`, `render_texture_height`, `is_texture_mode_active`, `unload_all_render_textures`, `MAX_RENDER_TEXTURES`, `MAX_RENDER_TEXTURE_SIZE` | implemented | 64 independent slots; dimensions up to 4096; mode/lifetime/capacity checks. |
+| `LoadRenderTextureEx`, custom/borrowed attachments, depth sampling | — | planned | No arbitrary target formats or external attachment lifetime sharing yet. |
+| Shaders, materials | — | planned | No standalone bindings yet; default materials stay native. |
 | `raymath.h`, quaternions, matrix arithmetic | `raylib.raymath` module, `raymath::` namespace | implemented / planned | 25 tested functions; all 146 C functions inventoried separately in `RAYMATH_STATUS.md`. |
 | `rlgl.h` public API | — | planned | Used internally for default-resource IDs and test framebuffer/GPU-resource checks; no Goose bindings. |
 
@@ -207,7 +216,7 @@ The adapter owns the model's meshes and resources referenced by its material
 maps. Unlike raw `UnloadModel`, it also releases non-default textures/shaders,
 deduplicating IDs shared within the model. There is no API to attach external
 materials/textures or borrow its meshes. Explicit `close_window()` and its
-`CloseWindow()` compatibility spelling release models/meshes before destroying GL;
+`CloseWindow()` compatibility spelling release models/meshes/render targets before destroying GL;
 generations survive context recreation. This does not add destructors or
 repair legacy texture/sound lifetimes. Raw C window manipulation bypasses
 this contract and is unsupported.
@@ -255,14 +264,52 @@ tint preservation, kind rejection, table exhaustion, failed/successful moves,
 slot reuse and context reopen. Native GPU queries verify that a transfer
 preserves the exact buffers and pointers until the eventual model unload.
 
+### Render-target ownership and mode guards
+
+`RenderTexture2D { let id: u64 }` and its alias `RenderTexture` reference one
+owned native FBO with color texture and depth renderbuffer. A separate 64-slot
+table uses a distinct kind tag plus generation; model/mesh tokens are rejected.
+Copies alias one target. Unload invalidates all aliases, exhausted generations
+retire rather than wrap, and tokens never revive after context recreation.
+No raw attachment or legacy `Texture2D` view can be extracted from a target.
+
+Loading requires a window, dimensions 1..4096 and no managed texture mode.
+It returns zero on invalid dimensions, capacity exhaustion or failed native
+validity/completeness checks. Failed native objects are unloaded without
+consuming a slot. Width/height queries return zero for invalid/stale handles.
+The fixed dimension cap bounds input arithmetic, not total available GPU memory.
+
+Mode begins return false for invalid/stale handles or any nested begin; an
+unmatched end returns false. Failure leaves the current target unchanged.
+Creation and individual/bulk unload are rejected while any managed texture
+mode is active because the native functions alter framebuffer bindings.
+Sampling another target is supported; sampling the active target into itself
+is rejected. Normal frame/camera-mode ordering remains the caller's responsibility.
+
+The simple draw automatically flips the whole FBO texture upright. The `_pro`
+draw preserves native source-rectangle/origin conventions, including negative
+source height for an upright FBO image and degree-based rotation. Inputs cross
+the ABI as scalars, not packed native structs; non-finite parameters are rejected.
+Explicit unload flushes queued texture draws before deleting GPU resources.
+Window close ends an active mode, flushes and frees all targets before GL closes.
+Raw C framebuffer/mode manipulation is outside this contract.
+
+Tests compare complete framebuffer images with direct native `DrawTextureRec`
+and `DrawTexturePro` calls, including crop, negative source dimensions, nonzero
+origins, tint, scale and rotation. Goose release/debug tests assert orientation,
+scaled/90-degree rotated pixels, target-to-target composition, restored viewport,
+off-screen 3D, queued-draw unload, mode/feedback guards, table limits, stale aliases
+and shutdown/reopen. Native queries verify actual FBO, color-texture and depth
+renderbuffer deletion; white-box tests cover failed-load cleanup and retirement.
+
 ### Verification limits
 
 - `tests/run_3d.py` separates headless computations, compiler rejection tests,
   external-package imports, and real Xvfb/llvmpipe rendering. Every new drawing
   wrapper is invoked in a frame; per-primitive visual correctness beyond the
   cube's pixel assertions is not exhaustively checked.
-- Primitive graphics tests run for three frames; model/mesh tests use bounded
-  frames plus a context reopen. All three 3D examples end after 120 frames.
+- Primitive graphics tests run for three frames; resource tests use bounded
+  frames plus a context reopen. The four 3D/off-screen examples end after 120 frames.
 - `main_thread_only = true` is enforced by a negative compiler test.
 - **JIT remains blocked in the existing local Goose build:** its embedded
   TinyCC cannot find `stdint.h` on NixOS. Package symbol-library construction

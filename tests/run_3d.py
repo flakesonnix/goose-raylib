@@ -66,9 +66,9 @@ def main():
     run("cmake-build", ["cmake", "--build", BUILD / "native", "--parallel", "2"])
     run("c-adapter", ["ctest", "--test-dir", BUILD / "native", "--output-on-failure"], marker="100% tests passed")
     run("raymath-inventory", [sys.executable, "tools/raymath_inventory.py", "--check"])
-    for source in ["raylib.goose", "raymath.goose", "cube3d.goose", "models.goose", "meshes.goose", "test_3d.goose",
+    for source in ["raylib.goose", "raymath.goose", "cube3d.goose", "models.goose", "meshes.goose", "render_texture.goose", "test_3d.goose",
                    "tests/math.goose", "tests/model_values.goose", "tests/models.goose", "tests/mesh_values.goose",
-                   "tests/meshes.goose", "tests/graphics_3d.goose"]:
+                   "tests/meshes.goose", "tests/render_texture_values.goose", "tests/render_textures.goose", "tests/graphics_3d.goose"]:
         run("check-" + source.removesuffix(".goose").replace("/", "-"), [goose, "check", source])
     run("wrong-vector", [goose, "check", "tests/invalid_3d.goose"], expected_error="cannot pass raylib::Vector2 as raylib::Vector3")
     run("wrong-thread", [goose, "check", "tests/invalid_3d_thread.goose"], expected_error="raylib runs on the main thread only")
@@ -81,6 +81,10 @@ def main():
     run("readonly-mesh-id", [goose, "check", "tests/invalid_mesh_id.goose"], expected_error="cannot assign to let id")
     run("wrong-mesh-matrix", [goose, "check", "tests/invalid_mesh_matrix.goose"], expected_error="cannot pass raylib::Vector3 as raylib::Matrix")
     run("wrong-mesh-thread", [goose, "check", "tests/invalid_mesh_thread.goose"], expected_error="raylib runs on the main thread only")
+    run("wrong-render-texture", [goose, "check", "tests/invalid_render_texture.goose"], expected_error="cannot pass raylib::Texture2D as raylib::RenderTexture2D")
+    run("readonly-render-texture-id", [goose, "check", "tests/invalid_render_texture_id.goose"], expected_error="cannot assign to let id")
+    run("wrong-render-texture-rect", [goose, "check", "tests/invalid_render_texture_rect.goose"], expected_error="cannot pass raylib::Vector3 as raylib::Rectangle")
+    run("wrong-render-texture-thread", [goose, "check", "tests/invalid_render_texture_thread.goose"], expected_error="raylib runs on the main thread only")
 
     for flags, name in [([], "camera-native"), (["--debug"], "camera-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "test_3d.goose"])
@@ -94,6 +98,9 @@ def main():
     for flags, name in [([], "mesh-values"), (["--debug"], "mesh-values-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/mesh_values.goose"])
         run(name, [BUILD / name], marker="mesh values passed")
+    for flags, name in [([], "render-texture-values"), (["--debug"], "render-texture-values-debug")]:
+        run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/render_texture_values.goose"])
+        run(name, [BUILD / name], marker="render texture values passed")
 
     # A consumer outside the package root, with no copied bindings or sidecar.
     consumer = BUILD / "consumer.goose"
@@ -113,6 +120,9 @@ def main():
         "  let mesh = raylib::gen_mesh_cube(1, 1, 1);\n"
         "  assert(!raylib::is_mesh_valid(mesh) && mesh.id == 0);\n"
         "  assert(raylib::load_model_from_mesh(mesh).id == 0);\n"
+        "  let target: raylib::RenderTexture = raylib::load_render_texture(16, 16);\n"
+        "  assert(!raylib::is_render_texture_valid(target) && target.id == 0);\n"
+        "  assert(!raylib::begin_texture_mode(target) && !raylib::end_texture_mode());\n"
         '  print("external consumer passed");\n}\n'
     )
     run("consumer-build", [goose, "build", "-o", BUILD / "consumer", consumer])
@@ -122,6 +132,7 @@ def main():
         run("math-jit", [goose, "run", "tests/math.goose"], marker="raymath passed")
         run("model-values-jit", [goose, "run", "tests/model_values.goose"], marker="model values passed")
         run("mesh-values-jit", [goose, "run", "tests/mesh_values.goose"], marker="mesh values passed")
+        run("render-texture-values-jit", [goose, "run", "tests/render_texture_values.goose"], marker="render texture values passed")
     else:
         print("NOT RUN: JIT (opt in with --jit; see README for the TinyCC limitation)")
 
@@ -142,12 +153,17 @@ def main():
         env=env, marker="model adapter graphics passed")
     run("mesh-c-lifecycle", [*xvfb, BUILD / "native" / "test_mesh_adapter", "--graphics"],
         env=env, marker="mesh adapter graphics passed")
+    run("render-texture-c-lifecycle", [*xvfb, BUILD / "native" / "test_render_texture_adapter", "--graphics"],
+        env=env, marker="render texture adapter graphics passed")
     for flags, name in [([], "models-native"), (["--debug"], "models-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/models.goose"])
         run(name, [*xvfb, BUILD / name], env=env, marker="models passed")
     for flags, name in [([], "meshes-native"), (["--debug"], "meshes-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/meshes.goose"])
         run(name, [*xvfb, BUILD / name], env=env, marker="meshes passed")
+    for flags, name in [([], "render-textures-native"), (["--debug"], "render-textures-debug")]:
+        run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/render_textures.goose"])
+        run(name, [*xvfb, BUILD / name], env=env, marker="render textures passed")
     run("graphics-build", [goose, "build", "-o", BUILD / "graphics", "tests/graphics_3d.goose"])
     run("graphics-native", [*xvfb, BUILD / "graphics"], env=env, marker="3d graphics passed")
     # Ensure that this did not accidentally connect to a user's Wayland display.
@@ -158,9 +174,10 @@ def main():
         run("graphics-jit", [*xvfb, goose, "run", "tests/graphics_3d.goose"], env=env, marker="3d graphics passed")
         run("models-jit", [*xvfb, goose, "run", "tests/models.goose"], env=env, marker="models passed")
         run("meshes-jit", [*xvfb, goose, "run", "tests/meshes.goose"], env=env, marker="meshes passed")
+        run("render-textures-jit", [*xvfb, goose, "run", "tests/render_textures.goose"], env=env, marker="render textures passed")
     run("cube-build", [goose, "build", "-o", BUILD / "cube3d", "cube3d.goose"])
     run("cube-example", [*xvfb, BUILD / "cube3d"], env=env, marker="Window closed successfully")
-    for name in ("minimal", "shapes", "input", "models", "meshes", "textures"):
+    for name in ("minimal", "shapes", "input", "models", "meshes", "textures", "render_texture"):
         run(name + "-build", [goose, "build", "-o", BUILD / name, name + ".goose"])
         run(name + "-regression", [*xvfb, BUILD / name], env=env, marker="Window closed successfully")
     print("3D native, adapter, external-import, compile-failure and graphics tests passed.")
