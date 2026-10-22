@@ -125,13 +125,60 @@ table of up to 64 loaded Sounds and hands out numeric handles.
 
 ## Phase D — 3D
 
-| Area | Status |
-|---|---|
-| Cameras (Camera3D) | planned |
-| Vectors/matrices (raymath) | planned |
-| 3D primitives | planned |
-| Meshes/models | planned |
-| Shaders | planned |
+This is the first 3D milestone, **not all of Phase D**. The backend is now
+raylib **6.2**, tag `6.2`, commit `02566453880e06bec97f5b8160fa6fe1e98397ca`.
+Both the Nix lock and CMake fallback select this revision. The tables below
+inventory the added camera/primitive surface, not the entire public header.
+
+| raylib C API | Goose name | Status | Coverage / difference |
+|---|---|---|---|
+| `Camera3D`, `Vector3`, `Ray`, `BoundingBox`, `Matrix` | same type names | implemented | Packed Goose values; C constructs its own native structs. Matrix follows named-field declaration order. |
+| `CAMERA_PERSPECTIVE`, `CAMERA_ORTHOGRAPHIC` | same constants | implemented | Both projections rendered in graphics test. |
+| `BeginMode3D`, `EndMode3D` | `begin_mode_3d`, `end_mode_3d` | implemented | Actual OpenGL frames, native builds. |
+| `GetCameraMatrix` | `get_camera_matrix` | implemented | Real view-matrix calculation; checked against direct C calls with unaligned buffers and output canaries. |
+| `GetWorldToScreen` | `get_world_to_screen` | implemented | Center point projection asserted for both camera projections. |
+| `GetScreenToWorldRay` | `get_screen_to_world_ray` | implemented | Center ray direction asserted for both projections. |
+| `UpdateCameraPro` | `update_camera_pro` | implemented | In/out `Camera3D&`; movement, rotation and zoom compared with direct C calls. |
+| `DrawLine3D` | `draw_line_3d` | implemented | Called in a real frame. |
+| `DrawPoint3D` | `draw_point_3d` | implemented | Called in a real frame. |
+| `DrawTriangle3D` | `draw_triangle_3d` | implemented | Called in a real frame; preserves counter-clockwise vertex order. |
+| `DrawCube` | `draw_cube` | implemented | Scalar x/y/z convenience API; framebuffer color/position assertions. |
+| `DrawCubeV` | `draw_cube_v` | implemented | Vector3 position and size; called in a real frame. |
+| `DrawCubeWires`, `DrawCubeWiresV` | `draw_cube_wires`, `draw_cube_wires_v` | implemented | Both called in a real frame. |
+| `DrawSphere` | `draw_sphere`, `draw_sphere_v` | implemented | `_v` is a Goose convenience wrapper, **not** a C symbol. |
+| `DrawSphereEx`, `DrawSphereWires` | `draw_sphere_ex`, `draw_sphere_wires` | implemented | Both called in a real frame. |
+| `DrawCylinder` | `draw_cylinder`, `draw_cylinder_v` | implemented | `_v` is a Goose convenience wrapper, **not** a C symbol. |
+| `DrawCylinderEx` | `draw_cylinder_ex` | implemented | Called in a real frame. |
+| `DrawCylinderWires` | `draw_cylinder_wires`, `draw_cylinder_wires_v` | implemented | `_v` is a Goose convenience wrapper, **not** a C symbol. |
+| `DrawCylinderWiresEx` | `draw_cylinder_wires_ex` | implemented | Called in a real frame. |
+| `DrawCapsule`, `DrawCapsuleWires` | `draw_capsule`, `draw_capsule_wires` | implemented | Both called in a real frame. |
+| `DrawPlane` | `draw_plane` | implemented | Called in a real frame. |
+| `DrawRay` | `draw_ray` | implemented | Called in a real frame. |
+| `DrawGrid` | `draw_grid` | implemented | Called in graphics test and bounded cube example. |
+| `DrawBoundingBox` | `draw_bounding_box` | implemented | Called in a real frame. |
+| `DrawCircle3D`, `DrawTriangleStrip3D` | — | planned | Remaining 3D primitive APIs. |
+| `UpdateCamera`, `CameraMode` | — | planned | Automatic input-driven camera modes. Use `update_camera_pro` for explicit movement. |
+| `GetWorldToScreenEx`, `GetScreenToWorldRayEx` | — | planned | Explicit viewport variants. |
+| Meshes, models, animations | — | planned | Need ownership-checked resource adapters; not included here. |
+| Shaders, materials, render textures | — | planned | Not included here. |
+| `raymath.h`, quaternions, matrix arithmetic | — | planned | Matrix is currently a value returned by `get_camera_matrix`, not a math module. |
+| `rlgl.h` public API | — | planned | Only the test helper uses it to flush the real framebuffer before readback. |
+
+### Verification limits
+
+- `tests/run_3d.py` separates headless computations, compiler rejection tests,
+  external-package imports, and real Xvfb/llvmpipe rendering. Every new drawing
+  wrapper is invoked in a frame; per-primitive visual correctness beyond the
+  cube's pixel assertions is not exhaustively checked.
+- Graphics tests run for three frames; `cube3d.goose` ends after 120 frames.
+- `main_thread_only = true` is enforced by a negative compiler test.
+- **JIT remains blocked in the existing local Goose build:** its embedded
+  TinyCC cannot find `stdint.h` on NixOS. Package symbol-library construction
+  works, but that is not a successful in-process program run. `--jit` opts
+  into the tests and fails rather than hiding this problem.
+- Linux x86_64 is the tested platform. Windows/macOS are untested.
+- Earlier Phase A–C labels predate these tests. They must not be interpreted
+  as full API coverage or exhaustive resource-lifetime verification.
 
 ## Phase E — remaining public API
 

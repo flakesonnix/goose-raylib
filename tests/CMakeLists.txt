@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.24)
+project(goose_raylib_test_support LANGUAGES C)
+add_subdirectory(.. raylib-native)
+add_library(goose_raylib_test_support STATIC capture.c)
+set_target_properties(goose_raylib_test_support PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(goose_raylib_test_support PUBLIC goose_raylib)
