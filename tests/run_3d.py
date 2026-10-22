@@ -7,11 +7,32 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import struct
 import subprocess
 import sys
+import zlib
 
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build" / "tests-3d"
+
+
+def model_fixtures():
+    """Real OBJ/MTL/PNG assets, without adding generated binaries to source."""
+    assets = BUILD / "model-assets"
+    assets.mkdir(exist_ok=True)
+    for source in (ROOT / "tests" / "assets").iterdir():
+        if source.suffix in (".obj", ".mtl"):
+            shutil.copyfile(source, assets / source.name)
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    # Uniform opaque RGBA (60, 120, 200); the graphics test asserts the pixel.
+    rows = (b"\0" + bytes((60, 120, 200, 255)) * 2) * 2
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    (assets / "albedo.png").write_bytes(png)
+    return assets
 
 
 def run(name, command, *, expected_error=None, marker=None, env=None):
@@ -45,12 +66,16 @@ def main():
     run("cmake-build", ["cmake", "--build", BUILD / "native", "--parallel", "2"])
     run("c-adapter", ["ctest", "--test-dir", BUILD / "native", "--output-on-failure"], marker="100% tests passed")
     run("raymath-inventory", [sys.executable, "tools/raymath_inventory.py", "--check"])
-    for source in ["raylib.goose", "raymath.goose", "cube3d.goose", "test_3d.goose", "tests/math.goose", "tests/graphics_3d.goose"]:
-        run("check-" + Path(source).stem, [goose, "check", source])
+    for source in ["raylib.goose", "raymath.goose", "cube3d.goose", "models.goose", "test_3d.goose",
+                   "tests/math.goose", "tests/model_values.goose", "tests/models.goose", "tests/graphics_3d.goose"]:
+        run("check-" + source.removesuffix(".goose").replace("/", "-"), [goose, "check", source])
     run("wrong-vector", [goose, "check", "tests/invalid_3d.goose"], expected_error="cannot pass raylib::Vector2 as raylib::Vector3")
     run("wrong-thread", [goose, "check", "tests/invalid_3d_thread.goose"], expected_error="raylib runs on the main thread only")
     run("wrong-matrix", [goose, "check", "tests/invalid_math.goose"], expected_error="cannot pass raylib::Vector3 as raylib::Matrix")
     run("wrong-quaternion", [goose, "check", "tests/invalid_quaternion.goose"], expected_error="cannot pass raylib::Vector3 as raymath::Quaternion")
+    run("wrong-model", [goose, "check", "tests/invalid_model.goose"], expected_error="cannot pass raylib::Sound as raylib::Model")
+    run("readonly-model-id", [goose, "check", "tests/invalid_model_id.goose"], expected_error="cannot assign to let id")
+    run("wrong-model-thread", [goose, "check", "tests/invalid_model_thread.goose"], expected_error="raylib runs on the main thread only")
 
     for flags, name in [([], "camera-native"), (["--debug"], "camera-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "test_3d.goose"])
@@ -58,6 +83,9 @@ def main():
     for flags, name in [([], "math-native"), (["--debug"], "math-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/math.goose"])
         run(name, [BUILD / name], marker="raymath passed")
+    for flags, name in [([], "model-values"), (["--debug"], "model-values-debug")]:
+        run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/model_values.goose"])
+        run(name, [BUILD / name], marker="model values passed")
 
     # A consumer outside the package root, with no copied bindings or sidecar.
     consumer = BUILD / "consumer.goose"
@@ -71,6 +99,9 @@ def main():
         "  assert(raylib::get_camera_matrix(c).m14 == -5);\n"
         "  assert(raymath::matrix_identity().m15 == 1);\n"
         "  assert(raymath::quaternion_identity().w == 1);\n"
+        "  assert(!raylib::is_model_valid(raylib::gen_model_cube(1, 1, 1)));\n"
+        "  let bounds, valid = raylib::get_model_bounding_box(raylib::Model { .. });\n"
+        "  assert(!valid && bounds.min.x == 0);\n"
         '  print("external consumer passed");\n}\n'
     )
     run("consumer-build", [goose, "build", "-o", BUILD / "consumer", consumer])
@@ -78,6 +109,7 @@ def main():
     if args.jit:
         run("camera-jit", [goose, "run", "test_3d.goose"], marker="test_3d passed")
         run("math-jit", [goose, "run", "tests/math.goose"], marker="raymath passed")
+        run("model-values-jit", [goose, "run", "tests/model_values.goose"], marker="model values passed")
     else:
         print("NOT RUN: JIT (opt in with --jit; see README for the TinyCC limitation)")
 
@@ -91,6 +123,12 @@ def main():
         env.pop(key, None)
     env.update(XDG_SESSION_TYPE="x11", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
     xvfb = ["xvfb-run", "-a", "-e", "/dev/stderr", "-s", "-screen 0 1024x768x24 +extension GLX"]
+    assets = model_fixtures()
+    run("model-c-lifecycle", [*xvfb, BUILD / "native" / "test_model_adapter", "--graphics", assets],
+        env=env, marker="model adapter graphics passed")
+    for flags, name in [([], "models-native"), (["--debug"], "models-debug")]:
+        run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/models.goose"])
+        run(name, [*xvfb, BUILD / name], env=env, marker="models passed")
     run("graphics-build", [goose, "build", "-o", BUILD / "graphics", "tests/graphics_3d.goose"])
     run("graphics-native", [*xvfb, BUILD / "graphics"], env=env, marker="3d graphics passed")
     # Ensure that this did not accidentally connect to a user's Wayland display.
@@ -99,9 +137,10 @@ def main():
         raise RuntimeError("graphics did not use the requested Xvfb/software rendering environment")
     if args.jit:
         run("graphics-jit", [*xvfb, goose, "run", "tests/graphics_3d.goose"], env=env, marker="3d graphics passed")
+        run("models-jit", [*xvfb, goose, "run", "tests/models.goose"], env=env, marker="models passed")
     run("cube-build", [goose, "build", "-o", BUILD / "cube3d", "cube3d.goose"])
     run("cube-example", [*xvfb, BUILD / "cube3d"], env=env, marker="Window closed successfully")
-    for name in ("minimal", "shapes", "input"):
+    for name in ("minimal", "shapes", "input", "models", "textures"):
         run(name + "-build", [goose, "build", "-o", BUILD / name, name + ".goose"])
         run(name + "-regression", [*xvfb, BUILD / name], env=env, marker="Window closed successfully")
     print("3D native, adapter, external-import, compile-failure and graphics tests passed.")
