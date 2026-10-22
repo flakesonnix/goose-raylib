@@ -31,6 +31,12 @@
         ];
         packages = [ raylib ];
 
+        # Xvfb/GLVND dlopen the Mesa vendor library and DRI driver. Merely
+        # adding mesa to PATH does not expose them on a non-NixOS CI host.
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.mesa pkgs.libglvnd ];
+        LIBGL_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
+        __GLX_VENDOR_LIBRARY_NAME = "mesa";
+
         shellHook = ''
           echo "goose-raylib: raylib 6.2, CMake and headless graphics test tools"
           echo "Set GOOSE to your Goose executable, then: python3 tests/run_3d.py"

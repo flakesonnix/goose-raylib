@@ -102,6 +102,8 @@ sidecar of its own, and runs real Xvfb/llvmpipe frames with framebuffer pixel
 assertions. It forces X11 rather than accidentally using the host Wayland
 session. Every graphics program has a finite frame count. Command failures
 and timeouts fail the suite; full logs are under `build/tests-3d/`.
+The Nix shell exposes Mesa's GLX vendor library and DRI drivers explicitly,
+including on non-NixOS CI hosts without `/run/opengl-driver`.
 
 **JIT limitation:** the tested existing Goose build's embedded TinyCC cannot
 find `stdint.h` on NixOS. Native builds and the package's native symbol library

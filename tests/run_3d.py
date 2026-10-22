@@ -80,7 +80,7 @@ def main():
     for key in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET"):
         env.pop(key, None)
     env.update(XDG_SESSION_TYPE="x11", LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe")
-    xvfb = ["xvfb-run", "-a", "-s", "-screen 0 1024x768x24 +extension GLX"]
+    xvfb = ["xvfb-run", "-a", "-e", "/dev/stderr", "-s", "-screen 0 1024x768x24 +extension GLX"]
     run("graphics-build", [goose, "build", "-o", BUILD / "graphics", "tests/graphics_3d.goose"])
     run("graphics-native", [*xvfb, BUILD / "graphics"], env=env, marker="3d graphics passed")
     # Ensure that this did not accidentally connect to a user's Wayland display.
