@@ -1,0 +1,2 @@
+cmake_target = "goose_raylib_test_support";
+main_thread_only = true;
