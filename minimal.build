@@ -1,4 +1,1 @@
-// minimal.build — C sidecar for minimal.goose
-c_sources = ["src/raylib_adapter.c"];
-c_include = ["src"];
-c_libs = ["raylib"];
+// Native code is supplied by the raylib package import.

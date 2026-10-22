@@ -26,6 +26,7 @@ typedef struct {
 const char *rl_to_c_string(goose_slice_u8 s);
 
 /* String-accepting raylib wrappers (called via Goose extern fn) */
+void rl_init_window(int width, int height, goose_slice_u8 title);
 void rl_draw_text(goose_slice_u8 text, int x, int y, int fontSize, Color color);
 int rl_measure_text(goose_slice_u8 text, int fontSize);
 void rl_set_window_title(goose_slice_u8 title);
