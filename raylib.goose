@@ -907,3 +907,67 @@ fn draw_mesh(mesh: Mesh, transform: Matrix, tint: Color) -> bool {
 fn load_model_from_mesh(mesh: Mesh) -> Model {
     return Model { grl_load_model_from_mesh(mesh.id) };
 }
+
+// Managed off-screen targets own all native FBO attachments in C.
+struct RenderTexture2D { let id: u64 }
+type RenderTexture = RenderTexture2D;
+const MAX_RENDER_TEXTURES: i32 = 64;
+const MAX_RENDER_TEXTURE_SIZE: i32 = 4096;
+
+extern fn grl_load_render_texture(width: i32, height: i32) -> u64;
+extern fn grl_is_render_texture_valid(id: u64) -> bool;
+extern fn grl_render_texture_width(id: u64) -> i32;
+extern fn grl_render_texture_height(id: u64) -> i32;
+extern fn grl_unload_render_texture(id: u64) -> bool;
+extern fn grl_unload_all_render_textures() -> i32;
+extern fn grl_begin_texture_mode(id: u64) -> bool;
+extern fn grl_end_texture_mode() -> bool;
+extern fn grl_is_texture_mode_active() -> bool;
+extern fn grl_draw_render_texture(id: u64, x: i32, y: i32, rgba: u32) -> bool;
+extern fn grl_draw_render_texture_pro(id: u64,
+    sx: f32, sy: f32, sw: f32, sh: f32, dx: f32, dy: f32, dw: f32, dh: f32,
+    ox: f32, oy: f32, rotation: f32, rgba: u32) -> bool;
+
+// A live window, no active texture mode, and dimensions 1..4096 are required.
+// Zero reports invalid dimensions, exhausted capacity or native load failure.
+fn load_render_texture(width: i32, height: i32) -> RenderTexture2D {
+    return RenderTexture2D { grl_load_render_texture(width, height) };
+}
+fn is_render_texture_valid(target: RenderTexture2D) -> bool {
+    return grl_is_render_texture_valid(target.id);
+}
+fn render_texture_width(target: RenderTexture2D) -> i32 {
+    return grl_render_texture_width(target.id);
+}
+fn render_texture_height(target: RenderTexture2D) -> i32 {
+    return grl_render_texture_height(target.id);
+}
+// Creation and all explicit unload operations fail while any texture mode is
+// active. Window close ends it and releases targets before destroying GL.
+fn unload_render_texture(target: RenderTexture2D) -> bool {
+    return grl_unload_render_texture(target.id);
+}
+fn unload_all_render_textures() -> i32 {
+    return grl_unload_all_render_textures();
+}
+// Modes do not nest. Failure leaves the current framebuffer/mode unchanged.
+fn begin_texture_mode(target: RenderTexture2D) -> bool {
+    return grl_begin_texture_mode(target.id);
+}
+fn end_texture_mode() -> bool {
+    return grl_end_texture_mode();
+}
+fn is_texture_mode_active() -> bool {
+    return grl_is_texture_mode_active();
+}
+// Whole target at 1:1 scale, vertically flipped for upright FBO presentation.
+fn draw_render_texture(target: RenderTexture2D, x: i32, y: i32, tint: Color) -> bool {
+    return grl_draw_render_texture(target.id, x, y, color_rgba(tint));
+}
+// Same source/destination/origin conventions as DrawTexturePro; use negative
+// source height for upright FBO contents. Rotation is DEGREES, not radians.
+fn draw_render_texture_pro(target: RenderTexture2D, source: Rectangle, dest: Rectangle,
+                          origin: Vector2, rotation: f32, tint: Color) -> bool {
+    return grl_draw_render_texture_pro(target.id, source.x, source.y, source.width, source.height,
+        dest.x, dest.y, dest.width, dest.height, origin.x, origin.y, rotation, color_rgba(tint));
+}

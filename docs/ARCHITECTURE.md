@@ -19,13 +19,15 @@ goose-raylib/
 │   ├── raylib_adapter.c  # C adapter impl (strings, legacy handles)
 │   ├── raylib_3d.c/h     # scalar and packed-value boundary
 │   ├── raylib_math.c/h   # upstream header-only math
-│   └── raylib_models.c/h # owned native models/meshes, generation tokens
+│   ├── raylib_models.c/h # owned native models/meshes, generation tokens
+│   └── raylib_render_textures.c/h # owned FBOs and texture-mode guards
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
 ├── cube3d.goose          # bounded 3D example; Pong lives in flakesonnix/goose-pong
 ├── models.goose          # bounded managed-model example
 ├── meshes.goose          # bounded standalone-mesh and move example
+├── render_texture.goose  # bounded off-screen 3D/compositing example
 ├── test_window.goose     # test: window smoke test
 ├── test_shapes.goose     # test: shapes / colors
 ├── test_strings.goose    # test: string conversion
@@ -43,8 +45,8 @@ goose-raylib/
 |---|---|---|
 | Strings | Goose `const u8[:]` is a `{ data, len }` slice, not a null-terminated `const char *` | C adapter `rl_text(const u8[:])` copies into a buffer and appends `\0` before calling raylib |
 | 3D structs | Goose `struct` is packed; matching fields alone do not prove a C calling ABI | New 3D calls pass scalars or borrowed fixed-size pointers. The adapter reconstructs native structs. |
-| bool | This Goose compiler emits `uint8_t` for `bool` | New test-support boolean functions return `uint8_t`. Legacy audio wrappers still return C `int` and need separate ABI cleanup. |
-| Resources | Native resources can contain C pointers | `Model` uses a generation-checked u64 token. `Sound` uses a legacy index handle; its lifetime validation and that of by-value `Texture2D` remain outstanding. |
+| bool | This Goose compiler emits `uint8_t` for `bool` | New adapters return `uint8_t`. Legacy audio wrappers still return C `int` and need separate ABI cleanup. |
+| Resources | Native resources can contain C pointers | `Model`, `Mesh` and `RenderTexture2D` use generation-checked u64 tokens. `Sound` uses a legacy index handle; its lifetime validation and that of by-value `Texture2D` remain outstanding. |
 | Callbacks | Goose has no runtime-generated function pointers | Not supported (documented openly); static C trampolines only if needed |
 | Return values | Goose allows one scalar or flat fixed-size value | raylib functions returning complex structs use out-parameters via adapter |
 
@@ -152,8 +154,8 @@ Raw `UnloadModel` frees meshes and material map arrays, but intentionally
 leaves their texture/shader ownership to the caller. This adapter permits no
 resource borrowing/replacement, so it releases non-default material GPU IDs
 once per model before calling `UnloadModel`. Both Goose window-close spellings
-route through model/mesh cleanup while GL is still alive. This is an explicit
-shutdown boundary, not automatic destruction or a change to legacy handles.
+route through render-target/model/mesh cleanup while GL is still alive. This is
+an explicit shutdown boundary, not automatic destruction or a change to legacy handles.
 
 Standalone meshes reuse a native single-mesh `Model` container, initialized
 with `LoadModelFromMesh` after the actual raylib generator uploads its data.
@@ -168,6 +170,25 @@ container and invalidates the source mesh slot. No fallible native allocation,
 deep copy or re-upload occurs during the move. A full destination table
 leaves the source intact. Mesh aliases cannot release transferred resources,
 even after slot reuse; each table's bulk unload only frees its own owners.
+
+### Render-target boundary (`src/raylib_render_textures.c`)
+
+A separate generation/kind-checked table owns native `RenderTexture2D` values,
+including their FBO, RGBA8 texture and depth renderbuffer. Width/height are queried
+through the token; no attachment is exposed as a legacy `Texture2D`. Native
+validity and framebuffer completeness are checked before retaining a new target.
+`UnloadRenderTexture` remains responsible for attachment deletion, not a copied
+or rewritten framebuffer implementation.
+
+The adapter tracks one managed texture mode. Nested begins, unmatched ends and
+self-sampling are rejected. Native load/unload/completeness operations rebind
+framebuffers, so resource creation and unload are disallowed during an active
+mode. Compositing passes scalar rectangles/origin/rotation and packed RGBA to
+native `DrawTextureRec`/`DrawTexturePro`. Before unloading, the real render batch
+is flushed so queued samples cannot reference deleted attachments. Both window
+close spellings end the mode and release render targets before model/mesh cleanup
+and native context destruction. This does not add automatic lifetime handling to
+older texture/sound adapters or support raw external framebuffer manipulation.
 
 ## 8. Out of scope (for now)
 

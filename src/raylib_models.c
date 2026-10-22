@@ -1,4 +1,5 @@
 #include "raylib_models.h"
+#include "raylib_render_textures.h"
 #include <rlgl.h>
 #include <math.h>
 
@@ -155,6 +156,7 @@ int32_t grl_unload_all_models(void) {
 
 void grl_close_window(void) {
     if (!IsWindowReady()) return;
+    grl_shutdown_render_textures();
     grl_unload_all_models();
     grl_unload_all_meshes();
     CloseWindow();
