@@ -106,6 +106,26 @@ Phase E: remaining public API (file I/O, logging, collision, …).
   graphics test uses a non-NUL-terminated title subslice. The pre-existing
   4096-byte conversion limit remains; improving that is separate work.
 
+### raymath boundary (`src/raylib_math.c`)
+
+`raymath.goose` is an optional module of the same native package, declaring
+the flat namespace `raymath`. Vector3 and Matrix are aliases of the existing
+Goose types; Quaternion is x/y/z/w f32 (16 bytes).
+
+The adapter defines `RAYMATH_STATIC_INLINE` and includes the unchanged
+upstream `raymath.h`, rather than looking up nonexistent exported inline
+symbols or reimplementing formulas. The CMake target includes this adapter
+and propagates libm where needed. All borrowed packed inputs are decoded
+with `memcpy`; vector/quaternion/matrix results use typed Goose out
+parameters. Matrix reads and writes both follow the explicit named-field
+declaration order, with no native struct pointer cast.
+
+Angles are radians and projection scalar inputs preserve upstream f64.
+These stateless calculations do not need an initialized window, although
+the current package-level main-thread restriction still applies. The
+header-based inventory covers every RMAPI C function; only tested wrappers
+are marked implemented.
+
 ## 8. Out of scope (for now)
 
 - No automatic resource cleanup (no RAII/destructors in Goose).

@@ -1,11 +1,12 @@
 // cube3d.goose — goose-raylib: 3D cube (Phase D)
-// Shows a moving colored cube with a 3D camera and grid.
+// Orbits a colored cube with raymath quaternion/matrix transforms.
 // Exits automatically after 120 frames.
 //
 // Build:
 //   goose build cube3d.goose && ./cube3d
 
 import raylib from ".";
+import raylib.raymath;
 
 fn main() {
     raylib::init_window(raylib::SCREEN_WIDTH, raylib::SCREEN_HEIGHT, "goose-raylib 3D cube");
@@ -32,9 +33,12 @@ fn main() {
         // Grid on the floor
         raylib::draw_grid(20, 1.0);
 
-        // Moving colored cube (left to right).
-        let cx: f32 = frames / 30.0 - 2.0;
-        let cube_pos = raylib::Vector3 { cx, 1.0, 0.0 };
+        // Quaternion rotation of a point around the Y axis (radians).
+        let angle: f32 = frames * 0.03;
+        let orbit = raymath::quaternion_from_axis_angle(raylib::Vector3 { 0, 1, 0 }, angle);
+        let cube_pos = raymath::vector3_transform(
+            raylib::Vector3 { 2, 1, 0 }, raymath::quaternion_to_matrix(orbit),
+        );
         let cube_size = raylib::Vector3 { 1.0, 1.0, 1.0 };
         raylib::draw_cube_v(cube_pos, cube_size, raylib::RED);
 
@@ -56,7 +60,7 @@ fn main() {
 
         // UI text
         raylib::draw_text("goose-raylib 3D demo", 20, 20, 20, raylib::BLACK);
-        raylib::draw_text("Moving cube + grid", 20, 50, 20, raylib::GRAY);
+        raylib::draw_text("Quaternion orbit + grid", 20, 50, 20, raylib::GRAY);
         raylib::draw_fps(10, 10);
 
         raylib::end_drawing();

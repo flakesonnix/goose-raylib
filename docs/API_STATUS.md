@@ -161,7 +161,7 @@ inventory the added camera/primitive surface, not the entire public header.
 | `GetWorldToScreenEx`, `GetScreenToWorldRayEx` | — | planned | Explicit viewport variants. |
 | Meshes, models, animations | — | planned | Need ownership-checked resource adapters; not included here. |
 | Shaders, materials, render textures | — | planned | Not included here. |
-| `raymath.h`, quaternions, matrix arithmetic | — | planned | Matrix is currently a value returned by `get_camera_matrix`, not a math module. |
+| `raymath.h`, quaternions, matrix arithmetic | `raylib.raymath` module, `raymath::` namespace | implemented / planned | 25 tested functions; all 146 C functions inventoried separately in `RAYMATH_STATUS.md`. |
 | `rlgl.h` public API | — | planned | Only the test helper uses it to flush the real framebuffer before readback. |
 
 ### Verification limits
@@ -179,6 +179,43 @@ inventory the added camera/primitive surface, not the entire public header.
 - Linux x86_64 is the tested platform. Windows/macOS are untested.
 - Earlier Phase A–C labels predate these tests. They must not be interpreted
   as full API coverage or exhaustive resource-lifetime verification.
+
+### raymath module
+
+Declare `import raylib from "...";` in the root, then load
+`import raylib.raymath;`. The compiler supports one namespace qualifier, so
+the API is `raymath::matrix_identity()`, not `raylib::math::matrix_identity()`.
+No new native package or compiler support is needed.
+
+| Types / constants | Status | Notes |
+|---|---|---|
+| `raymath::Vector3` | implemented | Alias of `raylib::Vector3`, not a second nominal type. |
+| `raymath::Matrix` | implemented | Alias of `raylib::Matrix`, same 16-float declaration order. |
+| `raymath::Quaternion` | implemented | Packed x/y/z/w f32 fields (16 bytes). Use `quaternion_identity()` for the identity rotation. |
+| `PI`, `DEG2RAD`, `RAD2DEG` | implemented | f32 constants matching the upstream conventions. |
+| `EPSILON`, `Vector2`, `Vector4`, `float3`, `float16` | planned | Not exposed as raymath module declarations yet. |
+| Other macros / C++ operators | blocked | No direct C ABI or Goose runtime operator-overload mapping; ordinary math wrappers are the supported interface. |
+
+[RAYMATH_STATUS.md](RAYMATH_STATUS.md) inventories **every RMAPI C function**
+from the pinned header: 25 implemented, 121 planned. The checker compares
+the inventory with the installed header, Goose wrapper declarations and
+native implementation/oracle calls. It does not generate bindings or turn
+untested declarations into an implementation claim.
+
+All 25 operations have direct C oracle checks with unaligned inputs and
+output canaries, plus headless native Goose release/debug tests. These cover
+non-commuting matrix multiplication, inversion, transform round trips,
+perspective/orthographic matrices, zero-vector normalization and quaternion
+rotations/interpolation. Invalid vector-to-matrix/quaternion calls are
+rejected by the actual compiler.
+
+Angles follow raymath's **radians**, not Camera3D's degree-based `fovy`.
+Projection inputs retain upstream **f64** precision; resulting matrices
+remain f32. Functions retain upstream preconditions and degenerate-input
+behavior (for example, inverting a singular matrix is not a checked error).
+The module does not require a window/display, but currently inherits the
+raylib package's main-thread-only restriction. JIT has the same documented
+TinyCC header limitation as the rest of the package.
 
 ## Phase E — remaining public API
 
