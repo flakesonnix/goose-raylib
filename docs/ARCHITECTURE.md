@@ -19,12 +19,13 @@ goose-raylib/
 │   ├── raylib_adapter.c  # C adapter impl (strings, legacy handles)
 │   ├── raylib_3d.c/h     # scalar and packed-value boundary
 │   ├── raylib_math.c/h   # upstream header-only math
-│   └── raylib_models.c/h # owned native models, generation tokens
+│   └── raylib_models.c/h # owned native models/meshes, generation tokens
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
 ├── cube3d.goose          # bounded 3D example; Pong lives in flakesonnix/goose-pong
 ├── models.goose          # bounded managed-model example
+├── meshes.goose          # bounded standalone-mesh and move example
 ├── test_window.goose     # test: window smoke test
 ├── test_shapes.goose     # test: shapes / colors
 ├── test_strings.goose    # test: string conversion
@@ -130,10 +131,11 @@ the current package-level main-thread restriction still applies. The
 header-based inventory covers every RMAPI C function; only tested wrappers
 are marked implemented.
 
-### Model boundary (`src/raylib_models.c`)
+### Model/mesh boundary (`src/raylib_models.c`)
 
 Native `Model`, `Mesh`, material arrays and GPU resources never cross into
-Goose. A 64-slot table returns u64 generation/slot tokens; zero is invalid.
+Goose. Separate 64-slot tables return u64 generation/slot tokens; zero is
+invalid and mesh slots have a distinct kind tag.
 Every operation checks the window, slot range, occupancy and generation
 before touching native resources. Unload invalidates the slot before freeing
 the model. Generations persist across window reopen and exhausted slots are
@@ -150,8 +152,22 @@ Raw `UnloadModel` frees meshes and material map arrays, but intentionally
 leaves their texture/shader ownership to the caller. This adapter permits no
 resource borrowing/replacement, so it releases non-default material GPU IDs
 once per model before calling `UnloadModel`. Both Goose window-close spellings
-route through model cleanup while GL is still alive. This is an explicit
+route through model/mesh cleanup while GL is still alive. This is an explicit
 shutdown boundary, not automatic destruction or a change to legacy handles.
+
+Standalone meshes reuse a native single-mesh `Model` container, initialized
+with `LoadModelFromMesh` after the actual raylib generator uploads its data.
+Its private default material is used by `DrawMesh`; tint is restored after
+each synchronous call. Matrix input is borrowed, decoded with `memcpy` in
+named-field declaration order, and checked for non-finite elements.
+Mesh counts and local bounds use the owned native mesh, never a public pointer.
+Tessellation limits keep native allocations/arithmetic and 16-bit indices bounded.
+
+Model transfer reserves a destination first, then moves the complete native
+container and invalidates the source mesh slot. No fallible native allocation,
+deep copy or re-upload occurs during the move. A full destination table
+leaves the source intact. Mesh aliases cannot release transferred resources,
+even after slot reuse; each table's bulk unload only frees its own owners.
 
 ## 8. Out of scope (for now)
 

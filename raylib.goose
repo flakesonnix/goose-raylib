@@ -832,3 +832,78 @@ fn draw_model_wires_ex(model: Model, position: Vector3, axis: Vector3, angle: f3
     return grl_draw_model_wires_ex(model.id, position.x, position.y, position.z, axis.x, axis.y, axis.z,
                                     angle, scale.x, scale.y, scale.z, color_rgba(tint));
 }
+
+// Standalone, uploaded meshes. Tokens are distinct from Model tokens.
+// Copies alias one resource; unload or successful model transfer invalidates all.
+struct Mesh { let id: u64 }
+const MAX_MESHES: i32 = 64;
+const MAX_MESH_SUBDIVISIONS: i32 = 128;
+
+extern fn grl_gen_mesh_poly(sides: i32, radius: f32) -> u64;
+extern fn grl_gen_mesh_plane(width: f32, length: f32, res_x: i32, res_z: i32) -> u64;
+extern fn grl_gen_mesh_cube(width: f32, height: f32, length: f32) -> u64;
+extern fn grl_gen_mesh_sphere(radius: f32, rings: i32, slices: i32) -> u64;
+extern fn grl_gen_mesh_hemi_sphere(radius: f32, rings: i32, slices: i32) -> u64;
+extern fn grl_gen_mesh_cylinder(radius: f32, height: f32, slices: i32) -> u64;
+extern fn grl_gen_mesh_cone(radius: f32, height: f32, slices: i32) -> u64;
+extern fn grl_is_mesh_valid(id: u64) -> bool;
+extern fn grl_unload_mesh(id: u64) -> bool;
+extern fn grl_unload_all_meshes() -> i32;
+extern fn grl_mesh_vertex_count(id: u64) -> i32;
+extern fn grl_mesh_triangle_count(id: u64) -> i32;
+extern fn grl_get_mesh_bounding_box(id: u64, out: BoundingBox&) -> bool;
+extern fn grl_draw_mesh(id: u64, transform: const Matrix&, rgba: u32) -> bool;
+extern fn grl_load_model_from_mesh(id: u64) -> u64;
+
+// Generation requires a window, positive finite dimensions and bounded
+// subdivisions: planes 1..MAX_MESH_SUBDIVISIONS, other generators 3..limit.
+fn gen_mesh_poly(sides: i32, radius: f32) -> Mesh {
+    return Mesh { grl_gen_mesh_poly(sides, radius) };
+}
+fn gen_mesh_plane(width: f32, length: f32, res_x: i32, res_z: i32) -> Mesh {
+    return Mesh { grl_gen_mesh_plane(width, length, res_x, res_z) };
+}
+fn gen_mesh_cube(width: f32, height: f32, length: f32) -> Mesh {
+    return Mesh { grl_gen_mesh_cube(width, height, length) };
+}
+fn gen_mesh_sphere(radius: f32, rings: i32, slices: i32) -> Mesh {
+    return Mesh { grl_gen_mesh_sphere(radius, rings, slices) };
+}
+fn gen_mesh_hemi_sphere(radius: f32, rings: i32, slices: i32) -> Mesh {
+    return Mesh { grl_gen_mesh_hemi_sphere(radius, rings, slices) };
+}
+fn gen_mesh_cylinder(radius: f32, height: f32, slices: i32) -> Mesh {
+    return Mesh { grl_gen_mesh_cylinder(radius, height, slices) };
+}
+fn gen_mesh_cone(radius: f32, height: f32, slices: i32) -> Mesh {
+    return Mesh { grl_gen_mesh_cone(radius, height, slices) };
+}
+fn is_mesh_valid(mesh: Mesh) -> bool {
+    return grl_is_mesh_valid(mesh.id);
+}
+fn unload_mesh(mesh: Mesh) -> bool {
+    return grl_unload_mesh(mesh.id);
+}
+fn unload_all_meshes() -> i32 {
+    return grl_unload_all_meshes();
+}
+fn mesh_vertex_count(mesh: Mesh) -> i32 {
+    return grl_mesh_vertex_count(mesh.id);
+}
+fn mesh_triangle_count(mesh: Mesh) -> i32 {
+    return grl_mesh_triangle_count(mesh.id);
+}
+fn get_mesh_bounding_box(mesh: Mesh) -> BoundingBox, bool {
+    var out = BoundingBox { .. };
+    let valid = grl_get_mesh_bounding_box(mesh.id, out);
+    return out, valid;
+}
+// DrawMesh with a private default material. No borrowed Material API yet.
+fn draw_mesh(mesh: Mesh, transform: Matrix, tint: Color) -> bool {
+    return grl_draw_mesh(mesh.id, transform, color_rgba(tint));
+}
+// Move, not copy: success invalidates all Mesh aliases. Failure returns Model
+// { 0 } and leaves a valid source intact, including when MAX_MODELS is reached.
+fn load_model_from_mesh(mesh: Mesh) -> Model {
+    return Model { grl_load_model_from_mesh(mesh.id) };
+}

@@ -5,7 +5,7 @@ C-API to Goose via `extern fn`. raylib remains the native backend; only a small
 C adapter bridges Goose slices to null-terminated C strings and marshals the
 new 3D API without relying on packed-by-value C struct compatibility.
 
-**Current milestone:** 3D cameras, primitives, raymath and managed models,
+**Current milestone:** 3D cameras, primitives, raymath and managed models/meshes,
 not the complete raylib API.
 The backend is raylib **6.2** (tag `6.2`, commit
 `02566453880e06bec97f5b8160fa6fe1e98397ca`), pinned in both the Nix flake
@@ -26,13 +26,14 @@ goose-raylib/
 │   ├── raylib_adapter.c  # C adapter impl (strings, textures)
 │   ├── raylib_3d.c/h     # scalar/borrowed-pointer 3D boundary
 │   ├── raylib_math.c/h   # header-only raymath native wrappers
-│   └── raylib_models.c/h # generation-checked model ownership
+│   └── raylib_models.c/h # generation-checked model/mesh ownership
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
 ├── textures.goose        # example: texture metadata queries (Phase B)
 ├── cube3d.goose          # 3D camera, quaternion orbit, sphere/grid (120 frames)
 ├── models.goose          # managed generated cube, unload (120 frames)
+├── meshes.goose          # generated meshes, exclusive model transfer (120 frames)
 ├── test_3d.goose         # headless Goose camera and value-layout tests
 ├── tests/               # C ABI, pixel readback, negative tests, test runner
 ├── test_window.goose     # test: window constants
@@ -62,6 +63,7 @@ goose build shapes.goose && ./shapes
 goose build input.goose && ./input
 goose build cube3d.goose && ./cube3d
 goose build models.goose && ./models
+goose build meshes.goose && ./meshes
 goose build textures.goose && ./textures
 
 # Full Pong example (developed separately):
@@ -99,7 +101,7 @@ goose check raylib.goose
 ```bash
 export GOOSE=/path/to/goose
 nix develop --command python3 tests/run_3d.py
-# Camera/math/model-value + compile-failure tests only (no display):
+# Camera/math/resource-value + compile-failure tests only (no display):
 nix develop --command python3 tests/run_3d.py --headless-only
 ```
 
@@ -113,6 +115,9 @@ including on non-NixOS CI hosts without `/run/opengl-driver`.
 Model tests load real OBJ/MTL/PNG fixtures, assert rendered colors, and check
 texture deletion through OpenGL. The runner generates the small PNG under
 `build/`; no downloaded assets or replacement renderer are involved.
+Mesh tests compare all seven generators' CPU data/bounds with direct raylib
+calls, compare a complete transformed framebuffer with native `DrawMesh`,
+and verify GPU-buffer ownership across mesh-to-model transfers.
 
 **JIT limitation:** the tested existing Goose build's embedded TinyCC cannot
 find `stdint.h` on NixOS. Native builds and the package's native symbol library
@@ -252,9 +257,9 @@ raylib::end_mode_3d();
   `draw_cube`, `draw_sphere` and `draw_cylinder` accept scalar x/y/z positions;
   `_v` conveniences accept `Vector3`. The latter do not invent C symbols.
 - **Value types:** `Vector3`, `Ray`, `Camera3D`, `BoundingBox`, `Matrix`.
-- **Still planned:** standalone meshes, model animations, shaders/materials,
-  render textures, automatic camera modes, remaining raymath operations and
-  public rlgl bindings. This is not a claim that Phase D is complete.
+- **Still planned:** arbitrary mesh upload/editing and remaining generators,
+  model animations, shaders/materials, render textures, automatic camera modes,
+  remaining raymath operations and public rlgl bindings. Phase D is not complete.
 
 ### Managed models
 
@@ -297,14 +302,70 @@ assert(raylib::unload_model(model));
   deleted once and raylib's default texture/shader are preserved. Raw native
   `UnloadModel` does not release those material GPU resources itself.
 - Explicit `close_window()` (also `CloseWindow()`) releases remaining managed
-  models **before** destroying the graphics context. This is not RAII and
-  does not clean up legacy texture/sound handles. Do not bypass it through
-  raw C window calls. Model resources cannot yet be lent or replaced.
+  models and standalone meshes **before** destroying the graphics context.
+  This is not RAII and does not clean up legacy texture/sound handles. Do not
+  bypass it through raw C window calls. Model resources cannot yet be lent
+  or replaced.
 - File loading delegates to raylib's enabled native loaders. **OBJ/MTL/PNG
   and generated cubes are tested**; other file formats are not yet verified.
   Native loaders are not a sandbox for malformed/untrusted model files.
-  Standalone `Mesh`, arbitrary mesh generation/upload and animations remain
-  planned; `gen_model_cube` owns its generated mesh internally.
+  Arbitrary mesh upload and animations remain planned; `gen_model_cube` owns
+  its generated mesh internally without using a standalone mesh slot.
+
+### Generated meshes and ownership transfer
+
+`meshes.goose` draws a standalone sphere and transfers a cone into a model.
+Declare `import raylib.raymath;` for the matrix helpers used below:
+
+```goose
+// After init_window():
+let mesh = raylib::gen_mesh_sphere(1, 16, 24);
+let alias = mesh;
+assert(raylib::is_mesh_valid(mesh));
+// Inside a drawing frame and 3D mode; default material, temporary tint:
+assert(raylib::draw_mesh(mesh, raymath::matrix_identity(), raylib::BLUE));
+
+// After drawing: a successful transfer consumes the mesh, not a deep copy.
+let model = raylib::load_model_from_mesh(mesh);
+assert(raylib::is_model_valid(model));
+assert(!raylib::is_mesh_valid(alias));
+assert(!raylib::unload_mesh(alias));  // cannot free the model's mesh
+assert(raylib::unload_model(model));
+```
+
+- Generators: `gen_mesh_poly`, `gen_mesh_plane`, `gen_mesh_cube`,
+  `gen_mesh_sphere`, `gen_mesh_hemi_sphere`, `gen_mesh_cylinder`, `gen_mesh_cone`.
+  They call raylib's generators, including native GPU upload. A window is
+  required. Dimensions/radii must be finite and positive; plane subdivisions
+  are **1–128**, other side/ring/slice counts **3–128** (`MAX_MESH_SUBDIVISIONS`).
+  The adapter rejects larger counts before native integer/index arithmetic
+  or allocation. Invalid inputs or exhausted capacity return `Mesh { 0 }`.
+- `Mesh { let id: u64 }` is a generation-checked token with a distinct kind
+  tag, not a native pointer. Up to `MAX_MESHES` (64) meshes may be live,
+  independently of the model table. Copies alias one resource; unloading or
+  moving it invalidates every alias. Stale tokens never revive on slot reuse
+  or window reopen. An alias's numeric `id` does not itself change to zero.
+- `mesh_vertex_count` / `mesh_triangle_count` return zero for invalid tokens.
+  `get_mesh_bounding_box` returns `(BoundingBox, bool)` with zeroed bounds on
+  failure. Bounds are in local mesh space, excluding the drawing transform.
+- `draw_mesh(mesh, transform, tint)` calls native `DrawMesh` with a private
+  default material, not a by-value `Material` ABI. It returns `false` for
+  invalid/stale handles or non-finite matrix elements. Finite matrices retain
+  raylib's preconditions; a successful call does not imply visible geometry.
+  Frame/3D-mode ordering is the caller's responsibility. Tints are temporary
+  and do not carry over when the mesh is moved into a model.
+- `load_model_from_mesh` moves the existing CPU/GPU resources without copying
+  or re-uploading. **Only success consumes the source.** A full model table
+  returns `Model { 0 }` and leaves a valid mesh intact so the call can be
+  retried. All source aliases become invalid after success, even if their
+  numeric IDs are retained. Neither double unload nor a second transfer is
+  permitted; both fail safely.
+- Use `unload_mesh` or transfer it to a model and later `unload_model`.
+  `unload_all_meshes` returns the released standalone count; it cannot release
+  already-transferred model meshes. `unload_all_models` leaves standalone
+  meshes intact. Explicit window close releases both tables before GL closes.
+- No borrowed model meshes/materials, arbitrary vertex access, buffer updates,
+  instancing, tangents, exports, torus/knot, heightmap or cubicmap bindings yet.
 
 ### raymath — vectors, matrices and quaternions
 
@@ -361,7 +422,7 @@ https://github.com/flakesonnix/goose-pong
 
 - **No automatic resource cleanup:** Goose has no destructors/RAII.
   Resources (textures, sounds, …) must be explicitly released with `unload_*`.
-  Managed models also have an explicit cleanup boundary at `close_window()`.
+  Managed models/meshes also have an explicit cleanup boundary at `close_window()`.
 - **Strings:** Goose `const u8[:]` is converted to null-terminated C strings
   via the C adapter (`src/raylib_adapter.c`).
 - **Display:** Graphical programs need an X11/Wayland display.

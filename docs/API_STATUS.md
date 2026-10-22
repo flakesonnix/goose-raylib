@@ -11,7 +11,7 @@ Status values:
 | raylib C API | Goose name | Module | Status | Note |
 |---|---|---|---|---|
 | `InitWindow` | `init_window` | window | implemented | tested under Xvfb (exit 0) |
-| `CloseWindow` | `close_window`, `CloseWindow` | window | implemented | releases managed models before closing GL; repeated close and reopen tested |
+| `CloseWindow` | `close_window`, `CloseWindow` | window | implemented | releases managed models/meshes before closing GL; repeated close and reopen tested |
 | `WindowShouldClose` | `window_should_close` | window | implemented | tested under Xvfb (exit 0) |
 | `SetTargetFPS` | `set_target_fps` | window | implemented | tested under Xvfb (exit 0) |
 | `SetWindowTitle` | `set_window_title` | window | implemented | via C adapter (rl_set_window_title) |
@@ -128,7 +128,7 @@ table of up to 64 loaded Sounds and hands out numeric handles.
 These are incremental 3D milestones, **not all of Phase D**. The backend is
 raylib **6.2**, tag `6.2`, commit `02566453880e06bec97f5b8160fa6fe1e98397ca`.
 Both the Nix lock and CMake fallback select this revision. The tables below
-inventory the added camera/primitive/model surface, not the entire public header.
+inventory the added camera/primitive/model/mesh surface, not the entire public header.
 
 | raylib C API | Goose name | Status | Coverage / difference |
 |---|---|---|---|
@@ -161,14 +161,26 @@ inventory the added camera/primitive/model surface, not the entire public header
 | `GetWorldToScreenEx`, `GetScreenToWorldRayEx` | — | planned | Explicit viewport variants. |
 | `Model` | `Model` | implemented | Read-only u64 generation token; native meshes/materials stay in C. |
 | `LoadModel` | `load_model` | implemented | Real OBJ/MTL/PNG loading/rendering tested; checked slice paths and failure cleanup. Other native file formats are untested. |
-| `GenMeshCube` + `LoadModelFromMesh` | `gen_model_cube` | implemented | Convenience that transfers a generated mesh into an owned model; not standalone mesh bindings. |
+| `GenMeshCube` + `LoadModelFromMesh` | `gen_model_cube` | implemented | One-step owned model convenience; independent of standalone mesh capacity. |
 | `IsModelValid` | `is_model_valid` | implemented | Validates slot/generation/window before checking native model; stale/reused IDs rejected. |
 | `UnloadModel` | `unload_model` | implemented | Returns bool; releases owned material GPU resources in addition to raw raylib model cleanup. |
 | `GetModelBoundingBox` | `get_model_bounding_box` | implemented | Returns bounds and bool; unaligned output/canaries and known mesh bounds tested. |
 | `DrawModel`, `DrawModelEx` | `draw_model`, `draw_model_ex` | implemented | Real framebuffer pixel assertions for file textures/tints and a nonuniform rotated transform. |
 | `DrawModelWires`, `DrawModelWiresEx` | `draw_model_wires`, `draw_model_wires_ex` | implemented | Both invoked in real frames; stale-handle rejection tested. No exhaustive wireframe pixel oracle. |
 | Model table helpers (no direct C counterparts) | `model_mesh_count`, `model_material_count`, `unload_all_models`, `MAX_MODELS` | implemented | 64-model capacity; cleanup count, aliases and generation retirement tested. |
-| Standalone meshes, arbitrary mesh upload/generation, model animations | — | planned | No borrowed native mesh/material handles exposed. |
+| `Mesh` | `Mesh` | implemented | Read-only u64 generation/kind token; a separate 64-slot ownership table. |
+| `GenMeshPoly` | `gen_mesh_poly` | implemented | Native vertex/normal/UV/index and bounds oracle, Goose framebuffer assertions. |
+| `GenMeshPlane` | `gen_mesh_plane` | implemented | Native indexed data oracle; minimum and maximum accepted subdivisions tested. |
+| `GenMeshCube` | `gen_mesh_cube` | implemented | Native indexed data/bounds oracle and matrix/color pixel assertions. |
+| `GenMeshSphere`, `GenMeshHemiSphere` | `gen_mesh_sphere`, `gen_mesh_hemi_sphere` | implemented | Both native data/bounds oracles and real framebuffer assertions. |
+| `GenMeshCylinder`, `GenMeshCone` | `gen_mesh_cylinder`, `gen_mesh_cone` | implemented | Both native data/bounds oracles and real framebuffer assertions. |
+| `DrawMesh` | `draw_mesh` | implemented | Default-material/tint adapter, not a Material binding; unaligned Matrix input compared against a complete native framebuffer. |
+| `GetMeshBoundingBox` | `get_mesh_bounding_box` | implemented | Local-space bounds plus bool; unaligned output and canaries. |
+| `UnloadMesh` | `unload_mesh` | implemented | Frees the standalone native owner via `UnloadModel`/`UnloadMesh`; bool, GPU deletion and double-unload checks. |
+| `LoadModelFromMesh` | `load_model_from_mesh` | implemented | Exclusive transfer, no deep copy/re-upload. On capacity failure, the source stays valid. |
+| Mesh table helpers (no direct C counterparts) | `is_mesh_valid`, `mesh_vertex_count`, `mesh_triangle_count`, `unload_all_meshes`, `MAX_MESHES`, `MAX_MESH_SUBDIVISIONS` | implemented | Kind/generation/window checks, counts, limits, retirement and independent model/mesh cleanup. |
+| `GenMeshTorus`, `GenMeshKnot`, `GenMeshHeightmap`, `GenMeshCubicmap` | — | planned | Remaining native generators. |
+| `UploadMesh`, `UpdateMeshBuffer`, `DrawMeshInstanced`, `GenMeshTangents`, mesh exports, model animations | — | planned | No arbitrary CPU arrays or borrowed native mesh/material handles exposed. |
 | Shaders, materials, render textures | — | planned | Not included here. |
 | `raymath.h`, quaternions, matrix arithmetic | `raylib.raymath` module, `raymath::` namespace | implemented / planned | 25 tested functions; all 146 C functions inventoried separately in `RAYMATH_STATUS.md`. |
 | `rlgl.h` public API | — | planned | Used internally for default-resource IDs and test framebuffer/GPU-resource checks; no Goose bindings. |
@@ -195,7 +207,7 @@ The adapter owns the model's meshes and resources referenced by its material
 maps. Unlike raw `UnloadModel`, it also releases non-default textures/shaders,
 deduplicating IDs shared within the model. There is no API to attach external
 materials/textures or borrow its meshes. Explicit `close_window()` and its
-`CloseWindow()` compatibility spelling release models before destroying GL;
+`CloseWindow()` compatibility spelling release models/meshes before destroying GL;
 generations survive context recreation. This does not add destructors or
 repair legacy texture/sound lifetimes. Raw C window manipulation bypasses
 this contract and is unsupported.
@@ -203,9 +215,45 @@ this contract and is unsupported.
 Tests cover actual file loading, slice subslices, rejected paths, empty OBJ
 failure cleanup, table exhaustion, slot reuse, generation exhaustion, context
 shutdown/reopen, and deletion of real mesh buffers, material textures and a
-shared test shader while another model and raylib defaults survive. Only
-OBJ/MTL/PNG and generated cubes have format coverage; other raylib loaders
-and malformed-file robustness are not claimed.
+shared test shader while another model and raylib defaults survive. File-format
+coverage is limited to OBJ/MTL/PNG; other raylib loaders and malformed-file
+robustness are not claimed. Procedural mesh coverage is described below.
+
+### Standalone mesh ownership and limits
+
+`Mesh { let id: u64 }` uses a separate 64-slot table, with generations in the
+high 32 bits and a kind-tagged one-based slot in the low 32 bits. Model tokens
+are rejected by mesh operations and vice versa, even before native resources
+are accessed. Copies alias one native owner; unload and successful transfer
+invalidate every alias. Generation exhaustion retires slots rather than
+wrapping. Generations persist across context recreation.
+
+All seven generators require a live window and finite positive dimensions.
+Plane subdivisions must be 1..`MAX_MESH_SUBDIVISIONS` (128); all other side,
+ring and slice counts must be 3..128. Larger or negative values are rejected
+before native arithmetic/allocation, bounding index sizes and memory growth.
+Generation failures return `Mesh { 0 }`. Invalid/stale draws and unloads
+return `false`; counts return zero; bounds return all-zero fields and `false`.
+Bounds exclude per-draw transforms. `draw_mesh` rejects non-finite matrix
+elements, but otherwise retains raylib's matrix and drawing-order preconditions.
+Its default-material tint is temporary and does not change transferred models.
+
+At generation, the adapter calls native `LoadModelFromMesh` to hold one mesh
+and its private default material in raylib's existing ownership container.
+`load_model_from_mesh` reserves a model slot, then moves that complete
+container without another allocation or upload. Only success consumes the
+source; an invalid source or full model table returns `Model { 0 }` and
+does not change a valid mesh. A second transfer or stale-alias unload fails.
+`unload_all_meshes` cannot free transferred meshes, and `unload_all_models`
+does not affect standalone meshes. Explicit window close releases both.
+
+Tests compare native positions, normals, UVs, indices, counts and bounds for
+all seven generators, including accepted boundary cases. A full framebuffer
+oracle checks an unaligned matrix with distinct scale/shear/translation fields.
+Goose release/debug tests assert pixels for every shape, matrix translation,
+tint preservation, kind rejection, table exhaustion, failed/successful moves,
+slot reuse and context reopen. Native GPU queries verify that a transfer
+preserves the exact buffers and pointers until the eventual model unload.
 
 ### Verification limits
 
@@ -213,8 +261,8 @@ and malformed-file robustness are not claimed.
   external-package imports, and real Xvfb/llvmpipe rendering. Every new drawing
   wrapper is invoked in a frame; per-primitive visual correctness beyond the
   cube's pixel assertions is not exhaustively checked.
-- Primitive graphics tests run for three frames; model tests use bounded
-  frames plus a context reopen. Both 3D examples end after 120 frames.
+- Primitive graphics tests run for three frames; model/mesh tests use bounded
+  frames plus a context reopen. All three 3D examples end after 120 frames.
 - `main_thread_only = true` is enforced by a negative compiler test.
 - **JIT remains blocked in the existing local Goose build:** its embedded
   TinyCC cannot find `stdint.h` on NixOS. Package symbol-library construction
