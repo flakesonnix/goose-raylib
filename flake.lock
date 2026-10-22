@@ -16,9 +16,27 @@
         "type": "github"
       }
     },
+    "raylib-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792077175,
+        "narHash": "sha256-z885D8MdNdx/sOG+xMfk2gwZfaIrgMnbW7Xx1Ee4f6M=",
+        "owner": "raysan5",
+        "repo": "raylib",
+        "rev": "02566453880e06bec97f5b8160fa6fe1e98397ca",
+        "type": "github"
+      },
+      "original": {
+        "owner": "raysan5",
+        "repo": "raylib",
+        "rev": "02566453880e06bec97f5b8160fa6fe1e98397ca",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "raylib-src": "raylib-src"
       }
     }
   },

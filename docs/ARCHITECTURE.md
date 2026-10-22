@@ -20,7 +20,7 @@ goose-raylib/
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
-├── pong.goose            # example: Pong (Definition of Done)
+├── cube3d.goose          # bounded 3D example; Pong lives in flakesonnix/goose-pong
 ├── test_window.goose     # test: window smoke test
 ├── test_shapes.goose     # test: shapes / colors
 ├── test_strings.goose    # test: string conversion
@@ -37,9 +37,9 @@ goose-raylib/
 | Problem | Cause | Solution |
 |---|---|---|
 | Strings | Goose `const u8[:]` is a `{ data, len }` slice, not a null-terminated `const char *` | C adapter `rl_text(const u8[:])` copies into a buffer and appends `\0` before calling raylib |
-| Structs | Goose `struct` is packed, no padding guarantees like C | Goose structs declared exactly like C (same order, same types); `pad` where needed |
-| bool | Goose `bool` vs. C `int` | Adapter uses `int` internally, converts where needed |
-| Resources | Complex raylib resources (`Texture2D`, `Sound`, …) are C structs, not opaque pointers in Goose | Passed as Goose `struct` by value (packed, 1:1 C layout); `unload_*` is explicit |
+| 3D structs | Goose `struct` is packed; matching fields alone do not prove a C calling ABI | New 3D calls pass scalars or borrowed fixed-size pointers. The adapter reconstructs native structs. |
+| bool | This Goose compiler emits `uint8_t` for `bool` | New test-support boolean functions return `uint8_t`. Legacy audio wrappers still return C `int` and need separate ABI cleanup. |
+| Resources | Native resources can contain C pointers | `Sound` uses an adapter handle. Legacy `Texture2D` is passed by value; generation/lifetime validation is still outstanding. |
 | Callbacks | Goose has no runtime-generated function pointers | Not supported (documented openly); static C trampolines only if needed |
 | Return values | Goose allows one scalar or flat fixed-size value | raylib functions returning complex structs use out-parameters via adapter |
 
@@ -75,9 +75,36 @@ Phase E: remaining public API (file I/O, logging, collision, …).
 
 ## 7. Build
 
-- `goose build` uses `raylib.build` with `c_libs = ["raylib"]` (provided via Nix).
-- `goose run` builds the C adapter into an in-process loaded library.
-- `nix develop goose-raylib/` provides `cmake`, `gcc`, `raylib`, `git`.
+- `import raylib from "path-or-pinned-repository";` assigns the declarations
+  to the raylib package. A bare local import loads declarations only; it does
+  not automatically activate another file's sidecar.
+- `raylib.build` names the static CMake target `goose_raylib` and marks it
+  main-thread-only. CMake carries raylib's native link dependencies; consumers
+  need neither copied adapter sources nor per-program `-lraylib` settings.
+- CMake uses an installed raylib 6.2 or a commit-and-SHA256-pinned archive.
+  The Nix flake builds that same upstream source from its locked input.
+- Goose can build a package symbol library for JIT. Actual JIT execution is
+  not yet verified: the local embedded TinyCC lacks NixOS system-header paths.
+  `C_INCLUDE_PATH` is consumed by the TinyCC CLI, not by Goose's libtcc runner.
+- From this repository: `nix develop` provides the native compiler, CMake,
+  raylib 6.2, Python and Xvfb. Goose itself is supplied by the caller.
+
+### 3D boundary (`src/raylib_3d.c`)
+
+- Scalar coordinates, dimensions and an unsigned `0xRRGGBBAA` color avoid
+  platform-dependent by-value struct passing entirely for the new draw calls.
+- `const Camera3D&` is a borrowed pointer to ten f32 values and one i32
+  projection (44 bytes). C decodes the fields with `memcpy`, never by casting
+  to a native `Camera3D*`. The pointer is never retained.
+- View matrices (64 bytes), rays (24 bytes) and screen coordinates (8 bytes)
+  are written into typed Goose out parameters, field by field in declaration
+  order. Camera updates use the same representation in both directions.
+- C tests compare real raylib results for both projections using deliberately
+  unaligned input/output buffers and canaries. Goose tests exercise the actual
+  generated calling convention and pixel readback, not just typechecking.
+- `init_window` now uses the existing string conversion adapter too. The
+  graphics test uses a non-NUL-terminated title subslice. The pre-existing
+  4096-byte conversion limit remains; improving that is separate work.
 
 ## 8. Out of scope (for now)
 

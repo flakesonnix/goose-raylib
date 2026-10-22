@@ -5,7 +5,7 @@
 // Build:
 //   goose build input.goose && ./input
 
-import raylib;
+import raylib from ".";
 
 fn main() {
     raylib::init_window(raylib::SCREEN_WIDTH, raylib::SCREEN_HEIGHT, "goose-raylib input");

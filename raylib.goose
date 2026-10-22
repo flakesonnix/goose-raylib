@@ -153,7 +153,9 @@ struct Camera2D { offset: Vector2, target: Vector2, rotation: f32, zoom: f32 }
 // Window — direct raylib C API (types compatible, no adapter needed)
 // ============================================================================
 
-extern fn InitWindow(width: i32, height: i32, title: const u8[:]);
+extern fn rl_init_window(width: i32, height: i32, title: const u8[:]);
+extern fn IsWindowReady() -> bool;
+extern fn SetConfigFlags(flags: u32);
 extern fn WindowShouldClose() -> bool;
 extern fn CloseWindow();
 extern fn SetTargetFPS(fps: i32);
@@ -187,7 +189,7 @@ extern fn DrawLineV(start: Vector2, end: Vector2, color: Color);
 extern fn DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color);
 extern fn DrawRectangleRec(rec: Rectangle, color: Color);
 extern fn DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color);
-extern fn DrawRectangleLinesEx(rec: Rectangle, lineThick: i32, color: Color);
+extern fn DrawRectangleLinesEx(rec: Rectangle, lineThick: f32, color: Color);
 
 // ============================================================================
 // 2D drawing: circles
@@ -239,7 +241,15 @@ extern fn GetMouseY() -> i32;
 // ============================================================================
 
 fn init_window(width: i32, height: i32, title: const u8[:]) {
-    InitWindow(width, height, title);
+    rl_init_window(width, height, title);
+}
+
+fn is_window_ready() -> bool {
+    return IsWindowReady();
+}
+
+fn set_config_flags(flags: u32) {
+    SetConfigFlags(flags);
 }
 
 fn close_window() {
@@ -318,7 +328,7 @@ fn draw_rectangle_lines(pos_x: i32, pos_y: i32, width: i32, height: i32, color: 
     DrawRectangleLines(pos_x, pos_y, width, height, color);
 }
 
-fn draw_rectangle_lines_ex(rec: Rectangle, line_thick: i32, color: Color) {
+fn draw_rectangle_lines_ex(rec: Rectangle, line_thick: f32, color: Color) {
     DrawRectangleLinesEx(rec, line_thick, color);
 }
 
@@ -574,3 +584,182 @@ fn set_sound_pan(sound: Sound, pan: f32) {
     rl_set_sound_pan(sound.id, pan);
 }
 
+// ============================================================================
+// Constants — Camera projection (raylib)
+// ============================================================================
+
+const CAMERA_PERSPECTIVE: i32 = 0;
+const CAMERA_ORTHOGRAPHIC: i32 = 1;
+
+// ============================================================================
+// Structs — 3D (Phase D)
+// ============================================================================
+
+// Value types stay in Goose. The adapter constructs native raylib structs;
+// matching field names/sizes alone do not prove a by-value C calling ABI.
+struct Vector3 { x: f32, y: f32, z: f32 }
+
+struct Ray { position: Vector3, direction: Vector3 }
+
+struct Camera3D { position: Vector3, target: Vector3, up: Vector3, fovy: f32, projection: i32 }
+
+struct BoundingBox { min: Vector3, max: Vector3 }
+
+// raylib's named fields are column-major, in this declaration order.
+struct Matrix { m0: f32, m4: f32, m8: f32, m12: f32, m1: f32, m5: f32, m9: f32, m13: f32, m2: f32, m6: f32, m10: f32, m14: f32, m3: f32, m7: f32, m11: f32, m15: f32 }
+
+// 3D ABI: primitive arguments plus borrowed fixed-size pointers. C uses
+// memcpy for packed/possibly unaligned references, including out parameters.
+extern fn grl_begin_mode_3d(camera: const Camera3D&);
+extern fn grl_end_mode_3d();
+extern fn grl_get_camera_matrix(camera: const Camera3D&, out: Matrix&);
+extern fn grl_get_world_to_screen(x: f32, y: f32, z: f32, camera: const Camera3D&, out: Vector2&);
+extern fn grl_get_screen_to_world_ray(x: f32, y: f32, camera: const Camera3D&, out: Ray&);
+extern fn grl_update_camera_pro(camera: Camera3D&, mx: f32, my: f32, mz: f32, rx: f32, ry: f32, rz: f32, zoom: f32);
+extern fn grl_draw_line_3d(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, rgba: u32);
+extern fn grl_draw_point_3d(x: f32, y: f32, z: f32, rgba: u32);
+extern fn grl_draw_triangle_3d(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, cx: f32, cy: f32, cz: f32, rgba: u32);
+extern fn grl_draw_cube(x: f32, y: f32, z: f32, w: f32, h: f32, length: f32, rgba: u32);
+extern fn grl_draw_cube_v(x: f32, y: f32, z: f32, w: f32, h: f32, length: f32, rgba: u32);
+extern fn grl_draw_cube_wires(x: f32, y: f32, z: f32, w: f32, h: f32, length: f32, rgba: u32);
+extern fn grl_draw_cube_wires_v(x: f32, y: f32, z: f32, w: f32, h: f32, length: f32, rgba: u32);
+extern fn grl_draw_sphere(x: f32, y: f32, z: f32, radius: f32, rgba: u32);
+extern fn grl_draw_sphere_ex(x: f32, y: f32, z: f32, radius: f32, rings: i32, slices: i32, rgba: u32);
+extern fn grl_draw_sphere_wires(x: f32, y: f32, z: f32, radius: f32, rings: i32, slices: i32, rgba: u32);
+extern fn grl_draw_cylinder(x: f32, y: f32, z: f32, top: f32, bottom: f32, height: f32, sides: i32, rgba: u32);
+extern fn grl_draw_cylinder_ex(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, start_radius: f32, end_radius: f32, sides: i32, rgba: u32);
+extern fn grl_draw_cylinder_wires(x: f32, y: f32, z: f32, top: f32, bottom: f32, height: f32, sides: i32, rgba: u32);
+extern fn grl_draw_cylinder_wires_ex(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, start_radius: f32, end_radius: f32, sides: i32, rgba: u32);
+extern fn grl_draw_capsule(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, radius: f32, rings: i32, slices: i32, rgba: u32);
+extern fn grl_draw_capsule_wires(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, radius: f32, rings: i32, slices: i32, rgba: u32);
+extern fn grl_draw_plane(x: f32, y: f32, z: f32, width: f32, length: f32, rgba: u32);
+extern fn grl_draw_ray(x: f32, y: f32, z: f32, dx: f32, dy: f32, dz: f32, rgba: u32);
+extern fn grl_draw_grid(slices: i32, spacing: f32);
+extern fn grl_draw_bounding_box(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, rgba: u32);
+
+fn color_rgba(color: Color) -> u32 {
+    (color.r as u32 << 24) | (color.g as u32 << 16) | (color.b as u32 << 8) | color.a
+}
+
+fn begin_mode_3d(camera: Camera3D) {
+    grl_begin_mode_3d(camera);
+}
+
+fn end_mode_3d() {
+    grl_end_mode_3d();
+}
+
+fn get_camera_matrix(camera: Camera3D) -> Matrix {
+    var out = Matrix { .. };
+    grl_get_camera_matrix(camera, out);
+    return out;
+}
+
+fn get_world_to_screen(position: Vector3, camera: Camera3D) -> Vector2 {
+    var out = Vector2 { .. };
+    grl_get_world_to_screen(position.x, position.y, position.z, camera, out);
+    return out;
+}
+
+fn get_screen_to_world_ray(position: Vector2, camera: Camera3D) -> Ray {
+    var out = Ray { .. };
+    grl_get_screen_to_world_ray(position.x, position.y, camera, out);
+    return out;
+}
+
+fn update_camera_pro(camera: Camera3D&, movement: Vector3, rotation: Vector3, zoom: f32) {
+    grl_update_camera_pro(camera, movement.x, movement.y, movement.z, rotation.x, rotation.y, rotation.z, zoom);
+}
+
+fn draw_line_3d(start: Vector3, end: Vector3, color: Color) {
+    grl_draw_line_3d(start.x, start.y, start.z, end.x, end.y, end.z, color_rgba(color));
+}
+
+fn draw_point_3d(position: Vector3, color: Color) {
+    grl_draw_point_3d(position.x, position.y, position.z, color_rgba(color));
+}
+
+fn draw_triangle_3d(a: Vector3, b: Vector3, c: Vector3, color: Color) {
+    grl_draw_triangle_3d(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, color_rgba(color));
+}
+
+fn draw_cube(x: f32, y: f32, z: f32, width: f32, height: f32, length: f32, color: Color) {
+    grl_draw_cube(x, y, z, width, height, length, color_rgba(color));
+}
+
+fn draw_cube_v(position: Vector3, size: Vector3, color: Color) {
+    grl_draw_cube_v(position.x, position.y, position.z, size.x, size.y, size.z, color_rgba(color));
+}
+
+fn draw_cube_wires(x: f32, y: f32, z: f32, width: f32, height: f32, length: f32, color: Color) {
+    grl_draw_cube_wires(x, y, z, width, height, length, color_rgba(color));
+}
+
+fn draw_cube_wires_v(position: Vector3, size: Vector3, color: Color) {
+    grl_draw_cube_wires_v(position.x, position.y, position.z, size.x, size.y, size.z, color_rgba(color));
+}
+
+fn draw_sphere(x: f32, y: f32, z: f32, radius: f32, color: Color) {
+    grl_draw_sphere(x, y, z, radius, color_rgba(color));
+}
+
+fn draw_sphere_v(position: Vector3, radius: f32, color: Color) {
+    draw_sphere(position.x, position.y, position.z, radius, color);
+}
+
+fn draw_sphere_ex(position: Vector3, radius: f32, rings: i32, slices: i32, color: Color) {
+    grl_draw_sphere_ex(position.x, position.y, position.z, radius, rings, slices, color_rgba(color));
+}
+
+fn draw_sphere_wires(position: Vector3, radius: f32, rings: i32, slices: i32, color: Color) {
+    grl_draw_sphere_wires(position.x, position.y, position.z, radius, rings, slices, color_rgba(color));
+}
+
+fn draw_cylinder(x: f32, y: f32, z: f32, radius_top: f32, radius_bottom: f32, height: f32, slices: i32, color: Color) {
+    grl_draw_cylinder(x, y, z, radius_top, radius_bottom, height, slices, color_rgba(color));
+}
+
+fn draw_cylinder_v(position: Vector3, radius_top: f32, radius_bottom: f32, height: f32, slices: i32, color: Color) {
+    draw_cylinder(position.x, position.y, position.z, radius_top, radius_bottom, height, slices, color);
+}
+
+fn draw_cylinder_ex(start: Vector3, end: Vector3, start_radius: f32, end_radius: f32, sides: i32, color: Color) {
+    grl_draw_cylinder_ex(start.x, start.y, start.z, end.x, end.y, end.z, start_radius, end_radius, sides, color_rgba(color));
+}
+
+fn draw_cylinder_wires(x: f32, y: f32, z: f32, radius_top: f32, radius_bottom: f32, height: f32, slices: i32, color: Color) {
+    grl_draw_cylinder_wires(x, y, z, radius_top, radius_bottom, height, slices, color_rgba(color));
+}
+
+fn draw_cylinder_wires_v(position: Vector3, radius_top: f32, radius_bottom: f32, height: f32, slices: i32, color: Color) {
+    draw_cylinder_wires(position.x, position.y, position.z, radius_top, radius_bottom, height, slices, color);
+}
+
+fn draw_cylinder_wires_ex(start: Vector3, end: Vector3, start_radius: f32, end_radius: f32, sides: i32, color: Color) {
+    grl_draw_cylinder_wires_ex(start.x, start.y, start.z, end.x, end.y, end.z, start_radius, end_radius, sides, color_rgba(color));
+}
+
+fn draw_capsule(start: Vector3, end: Vector3, radius: f32, rings: i32, slices: i32, color: Color) {
+    grl_draw_capsule(start.x, start.y, start.z, end.x, end.y, end.z, radius, rings, slices, color_rgba(color));
+}
+
+fn draw_capsule_wires(start: Vector3, end: Vector3, radius: f32, rings: i32, slices: i32, color: Color) {
+    grl_draw_capsule_wires(start.x, start.y, start.z, end.x, end.y, end.z, radius, rings, slices, color_rgba(color));
+}
+
+fn draw_plane(center: Vector3, size: Vector2, color: Color) {
+    grl_draw_plane(center.x, center.y, center.z, size.x, size.y, color_rgba(color));
+}
+
+fn draw_ray(ray: Ray, color: Color) {
+    grl_draw_ray(ray.position.x, ray.position.y, ray.position.z,
+                 ray.direction.x, ray.direction.y, ray.direction.z, color_rgba(color));
+}
+
+fn draw_grid(slices: i32, spacing: f32) {
+    grl_draw_grid(slices, spacing);
+}
+
+fn draw_bounding_box(box: BoundingBox, color: Color) {
+    grl_draw_bounding_box(box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, color_rgba(color));
+}

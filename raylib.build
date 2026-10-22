@@ -1,4 +1,4 @@
-// raylib.build — Goose C sidecar for goose-raylib
-// Links libraylib (provided via Nix devShell or system).
-
-c_libs = ["raylib"];
+// Native dependency of `import raylib from "path-or-pinned-repository";`.
+cmake_target = "goose_raylib";
+main_thread_only = true;
+exclude = ["tests", "build", "third_party"];

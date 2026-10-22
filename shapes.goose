@@ -4,7 +4,7 @@
 // Build:
 //   goose build shapes.goose && ./shapes
 
-import raylib;
+import raylib from ".";
 
 fn main() {
     raylib::init_window(raylib::SCREEN_WIDTH, raylib::SCREEN_HEIGHT, "goose-raylib shapes");
