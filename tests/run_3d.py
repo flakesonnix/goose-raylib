@@ -44,30 +44,40 @@ def main():
     run("cmake-configure", ["cmake", "-S", ROOT, "-B", BUILD / "native", "-DCMAKE_BUILD_TYPE=Debug"])
     run("cmake-build", ["cmake", "--build", BUILD / "native", "--parallel", "2"])
     run("c-adapter", ["ctest", "--test-dir", BUILD / "native", "--output-on-failure"], marker="100% tests passed")
-    for source in ["raylib.goose", "cube3d.goose", "test_3d.goose", "tests/graphics_3d.goose"]:
+    run("raymath-inventory", [sys.executable, "tools/raymath_inventory.py", "--check"])
+    for source in ["raylib.goose", "raymath.goose", "cube3d.goose", "test_3d.goose", "tests/math.goose", "tests/graphics_3d.goose"]:
         run("check-" + Path(source).stem, [goose, "check", source])
     run("wrong-vector", [goose, "check", "tests/invalid_3d.goose"], expected_error="cannot pass raylib::Vector2 as raylib::Vector3")
     run("wrong-thread", [goose, "check", "tests/invalid_3d_thread.goose"], expected_error="raylib runs on the main thread only")
+    run("wrong-matrix", [goose, "check", "tests/invalid_math.goose"], expected_error="cannot pass raylib::Vector3 as raylib::Matrix")
+    run("wrong-quaternion", [goose, "check", "tests/invalid_quaternion.goose"], expected_error="cannot pass raylib::Vector3 as raymath::Quaternion")
 
     for flags, name in [([], "camera-native"), (["--debug"], "camera-debug")]:
         run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "test_3d.goose"])
         run(name, [BUILD / name], marker="test_3d passed")
+    for flags, name in [([], "math-native"), (["--debug"], "math-debug")]:
+        run(name + "-build", [goose, "build", *flags, "-o", BUILD / name, "tests/math.goose"])
+        run(name, [BUILD / name], marker="raymath passed")
 
     # A consumer outside the package root, with no copied bindings or sidecar.
     consumer = BUILD / "consumer.goose"
     consumer.write_text(
         f"import raylib from {json.dumps(str(ROOT))};\n"
+        "import raylib.raymath;\n"
         "fn main() {\n"
         "  let c = raylib::Camera3D { position: raylib::Vector3 { 0, 0, 5 },\n"
         "      target: raylib::Vector3 { .. }, up: raylib::Vector3 { 0, 1, 0 },\n"
         "      fovy: 45, projection: raylib::CAMERA_PERSPECTIVE };\n"
         "  assert(raylib::get_camera_matrix(c).m14 == -5);\n"
+        "  assert(raymath::matrix_identity().m15 == 1);\n"
+        "  assert(raymath::quaternion_identity().w == 1);\n"
         '  print("external consumer passed");\n}\n'
     )
     run("consumer-build", [goose, "build", "-o", BUILD / "consumer", consumer])
     run("consumer", [BUILD / "consumer"], marker="external consumer passed")
     if args.jit:
         run("camera-jit", [goose, "run", "test_3d.goose"], marker="test_3d passed")
+        run("math-jit", [goose, "run", "tests/math.goose"], marker="raymath passed")
     else:
         print("NOT RUN: JIT (opt in with --jit; see README for the TinyCC limitation)")
 
