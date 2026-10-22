@@ -15,6 +15,7 @@ and CMake's SHA256-checked source fallback.
 ```
 goose-raylib/
 ├── raylib.goose          # Goose bindings, namespace raylib
+├── raymath.goose         # optional math module, namespace raymath
 ├── raylib.build          # native package dependency, main-thread-only
 ├── CMakeLists.txt        # static adapter + raylib link dependencies
 ├── flake.nix             # Nix devShell, raylib 6.2, Xvfb, Python
@@ -22,12 +23,13 @@ goose-raylib/
 ├── src/
 │   ├── raylib_adapter.h  # C adapter header
 │   ├── raylib_adapter.c  # C adapter impl (strings, textures)
-│   └── raylib_3d.c/h     # scalar/borrowed-pointer 3D boundary
+│   ├── raylib_3d.c/h     # scalar/borrowed-pointer 3D boundary
+│   └── raylib_math.c/h   # header-only raymath native wrappers
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
 ├── textures.goose        # example: texture metadata queries (Phase B)
-├── cube3d.goose          # 3D camera, moving cube, sphere and grid (120 frames)
+├── cube3d.goose          # 3D camera, quaternion orbit, sphere/grid (120 frames)
 ├── test_3d.goose         # headless Goose camera and value-layout tests
 ├── tests/               # C ABI, pixel readback, negative tests, test runner
 ├── test_window.goose     # test: window constants
@@ -79,7 +81,7 @@ goose check raylib.goose
 ### Without Nix
 
 Install Goose, CMake >= 3.24, a C/C++ toolchain and raylib's Linux graphics
-development dependencies. CMake uses an installed raylib 6.2 when available;
+development dependencies and pkg-config. CMake uses an installed raylib 6.2 when available;
 otherwise it fetches the pinned source archive. No local library paths are
 embedded in the package. Then, from this checkout:
 
@@ -244,8 +246,51 @@ raylib::end_mode_3d();
   `_v` conveniences accept `Vector3`. The latter do not invent C symbols.
 - **Value types:** `Vector3`, `Ray`, `Camera3D`, `BoundingBox`, `Matrix`.
 - **Still planned:** meshes/models, shaders/materials, render textures,
-  automatic camera modes, raymath arithmetic/quaternions and public rlgl
+  automatic camera modes, remaining raymath operations and public rlgl
   bindings. This is not a claim that Phase D is complete.
+
+### raymath — vectors, matrices and quaternions
+
+The optional `raylib.raymath` module has its own `raymath` namespace and uses
+the actual header-only raymath implementation from the pinned raylib 6.2
+release. It does not assume inline functions are exported by `libraylib`.
+
+```goose
+import raylib from "../goose-raylib";
+import raylib.raymath;
+
+fn main() {
+    let point = raylib::Vector3 { 1, 0, 0 };
+    let rotation = raymath::quaternion_from_axis_angle(
+        raylib::Vector3 { 0, 0, 1 }, raymath::PI / 2,
+    );
+    let result = raymath::vector3_transform(point, raymath::quaternion_to_matrix(rotation));
+    print(result);  // approximately Vector3 { 0, 1, 0 }
+}
+```
+
+- **Vector3:** add, subtract, scale, dot, length, cross, normalize, transform,
+  lerp (`vector3_*`). Vector3 and Matrix aliases reuse the raylib value types.
+- **Matrix:** identity, translate, scale, rotate_xyz, multiply, invert,
+  perspective, ortho, look_at (`matrix_*`). Composition order is exactly
+  upstream raymath's order; tests include non-commuting transforms.
+- **Quaternion:** identity, normalize, multiply, slerp, from_axis_angle,
+  to_matrix, from_matrix (`quaternion_*`); packed x/y/z/w fields.
+- Angles are **radians**. `matrix_perspective` / `matrix_ortho` retain the
+  upstream f64 inputs; output matrices use f32. Existing upstream input
+  preconditions apply, including for singular-matrix inversion.
+- No display is needed, but the module currently inherits the package's
+  main-thread-only restriction. JIT remains subject to the limitation above.
+
+All 25 implemented operations are tested in C and Goose. The complete
+[raymath function inventory](docs/RAYMATH_STATUS.md) lists all 146 RMAPI
+functions, including the 121 still planned. Update/check it with:
+
+```bash
+nix develop --command python3 tools/raymath_inventory.py --check
+# After implementing and testing another operation:
+nix develop --command python3 tools/raymath_inventory.py --write
+```
 
 See `docs/API_STATUS.md` for the full implementation status.
 
