@@ -5,7 +5,8 @@ C-API to Goose via `extern fn`. raylib remains the native backend; only a small
 C adapter bridges Goose slices to null-terminated C strings and marshals the
 new 3D API without relying on packed-by-value C struct compatibility.
 
-**Current milestone:** 3D cameras and primitives, not the complete raylib API.
+**Current milestone:** 3D cameras, primitives, raymath and managed models,
+not the complete raylib API.
 The backend is raylib **6.2** (tag `6.2`, commit
 `02566453880e06bec97f5b8160fa6fe1e98397ca`), pinned in both the Nix flake
 and CMake's SHA256-checked source fallback.
@@ -24,12 +25,14 @@ goose-raylib/
 │   ├── raylib_adapter.h  # C adapter header
 │   ├── raylib_adapter.c  # C adapter impl (strings, textures)
 │   ├── raylib_3d.c/h     # scalar/borrowed-pointer 3D boundary
-│   └── raylib_math.c/h   # header-only raymath native wrappers
+│   ├── raylib_math.c/h   # header-only raymath native wrappers
+│   └── raylib_models.c/h # generation-checked model ownership
 ├── minimal.goose         # example: window + text (Phase A)
 ├── shapes.goose          # example: shapes, lines, circles (Phase A)
 ├── input.goose           # example: keyboard/mouse input (Phase A)
 ├── textures.goose        # example: texture metadata queries (Phase B)
 ├── cube3d.goose          # 3D camera, quaternion orbit, sphere/grid (120 frames)
+├── models.goose          # managed generated cube, unload (120 frames)
 ├── test_3d.goose         # headless Goose camera and value-layout tests
 ├── tests/               # C ABI, pixel readback, negative tests, test runner
 ├── test_window.goose     # test: window constants
@@ -58,6 +61,7 @@ goose build minimal.goose && ./minimal
 goose build shapes.goose && ./shapes
 goose build input.goose && ./input
 goose build cube3d.goose && ./cube3d
+goose build models.goose && ./models
 goose build textures.goose && ./textures
 
 # Full Pong example (developed separately):
@@ -95,7 +99,7 @@ goose check raylib.goose
 ```bash
 export GOOSE=/path/to/goose
 nix develop --command python3 tests/run_3d.py
-# Camera math + compile-failure tests only (no display):
+# Camera/math/model-value + compile-failure tests only (no display):
 nix develop --command python3 tests/run_3d.py --headless-only
 ```
 
@@ -106,6 +110,9 @@ session. Every graphics program has a finite frame count. Command failures
 and timeouts fail the suite; full logs are under `build/tests-3d/`.
 The Nix shell exposes Mesa's GLX vendor library and DRI drivers explicitly,
 including on non-NixOS CI hosts without `/run/opengl-driver`.
+Model tests load real OBJ/MTL/PNG fixtures, assert rendered colors, and check
+texture deletion through OpenGL. The runner generates the small PNG under
+`build/`; no downloaded assets or replacement renderer are involved.
 
 **JIT limitation:** the tested existing Goose build's embedded TinyCC cannot
 find `stdint.h` on NixOS. Native builds and the package's native symbol library
@@ -245,9 +252,59 @@ raylib::end_mode_3d();
   `draw_cube`, `draw_sphere` and `draw_cylinder` accept scalar x/y/z positions;
   `_v` conveniences accept `Vector3`. The latter do not invent C symbols.
 - **Value types:** `Vector3`, `Ray`, `Camera3D`, `BoundingBox`, `Matrix`.
-- **Still planned:** meshes/models, shaders/materials, render textures,
-  automatic camera modes, remaining raymath operations and public rlgl
-  bindings. This is not a claim that Phase D is complete.
+- **Still planned:** standalone meshes, model animations, shaders/materials,
+  render textures, automatic camera modes, remaining raymath operations and
+  public rlgl bindings. This is not a claim that Phase D is complete.
+
+### Managed models
+
+`models.goose` is a bounded, asset-free example. Loading a file uses the same
+handle API as generating a cube:
+
+```goose
+// After init_window(), before close_window():
+let model = raylib::load_model("assets/model.obj");
+// Or: let model = raylib::gen_model_cube(2, 2, 2);
+assert(raylib::is_model_valid(model));
+let bounds, valid = raylib::get_model_bounding_box(model);
+assert(valid);
+
+// Inside begin_drawing() / begin_mode_3d():
+assert(raylib::draw_model(model, raylib::Vector3 { .. }, 1, raylib::WHITE));
+
+// After drawing, while the window/context is still open:
+assert(raylib::unload_model(model));
+```
+
+- `Model { let id: u64 }` contains a generation-checked token, not a native
+  pointer or OpenGL ID. Copies alias one resource; unloading one invalidates
+  all copies, including after its slot is reused or the window is reopened.
+- Up to `MAX_MODELS` (64) models may be live. Load/generation failures return
+  `Model { 0 }`. Loading requires an initialized window. Cube dimensions must
+  be finite and positive. Paths are copied from slices; empty, embedded-NUL
+  and overlong paths (4096 bytes or more) are rejected, not truncated.
+- `draw_model`, `draw_model_ex`, `draw_model_wires`, `draw_model_wires_ex`
+  return `false` for invalid/stale handles or non-finite transforms. A `true`
+  result means the native draw call was issued, not that geometry is visible.
+  Call them inside a drawing frame and 3D mode. `_ex` rotation is in **degrees**,
+  unlike raymath. Finite zero/negative drawing scales keep raylib's semantics.
+- `model_mesh_count` / `model_material_count` return zero for invalid handles.
+  `get_model_bounding_box` returns `(BoundingBox, bool)`, with zeroed bounds
+  and `false` on failure. Bounds do not include per-draw transforms.
+- `unload_model` returns `false` for already-unloaded/invalid handles.
+  `unload_all_models` returns the number released. Both meshes and owned
+  material textures/shaders are released; shared IDs within a model are
+  deleted once and raylib's default texture/shader are preserved. Raw native
+  `UnloadModel` does not release those material GPU resources itself.
+- Explicit `close_window()` (also `CloseWindow()`) releases remaining managed
+  models **before** destroying the graphics context. This is not RAII and
+  does not clean up legacy texture/sound handles. Do not bypass it through
+  raw C window calls. Model resources cannot yet be lent or replaced.
+- File loading delegates to raylib's enabled native loaders. **OBJ/MTL/PNG
+  and generated cubes are tested**; other file formats are not yet verified.
+  Native loaders are not a sandbox for malformed/untrusted model files.
+  Standalone `Mesh`, arbitrary mesh generation/upload and animations remain
+  planned; `gen_model_cube` owns its generated mesh internally.
 
 ### raymath — vectors, matrices and quaternions
 
@@ -304,6 +361,7 @@ https://github.com/flakesonnix/goose-pong
 
 - **No automatic resource cleanup:** Goose has no destructors/RAII.
   Resources (textures, sounds, …) must be explicitly released with `unload_*`.
+  Managed models also have an explicit cleanup boundary at `close_window()`.
 - **Strings:** Goose `const u8[:]` is converted to null-terminated C strings
   via the C adapter (`src/raylib_adapter.c`).
 - **Display:** Graphical programs need an X11/Wayland display.

@@ -157,7 +157,7 @@ extern fn rl_init_window(width: i32, height: i32, title: const u8[:]);
 extern fn IsWindowReady() -> bool;
 extern fn SetConfigFlags(flags: u32);
 extern fn WindowShouldClose() -> bool;
-extern fn CloseWindow();
+extern fn grl_close_window();
 extern fn SetTargetFPS(fps: i32);
 extern fn ToggleFullscreen();
 extern fn HideCursor();
@@ -253,7 +253,12 @@ fn set_config_flags(flags: u32) {
 }
 
 fn close_window() {
-    CloseWindow();
+    grl_close_window();
+}
+
+// Compatibility spelling also respects managed resource cleanup.
+fn CloseWindow() {
+    close_window();
 }
 
 fn window_should_close() -> bool {
@@ -762,4 +767,68 @@ fn draw_grid(slices: i32, spacing: f32) {
 
 fn draw_bounding_box(box: BoundingBox, color: Color) {
     grl_draw_bounding_box(box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, color_rgba(color));
+}
+
+// Managed models own their meshes and loaded material resources in C.
+// Copies share one generation-checked token; unloading invalidates every copy.
+struct Model { let id: u64 }
+const MAX_MODELS: i32 = 64;
+
+extern fn grl_load_model(path: const u8[:]) -> u64;
+extern fn grl_gen_model_cube(width: f32, height: f32, length: f32) -> u64;
+extern fn grl_is_model_valid(id: u64) -> bool;
+extern fn grl_unload_model(id: u64) -> bool;
+extern fn grl_unload_all_models() -> i32;
+extern fn grl_model_mesh_count(id: u64) -> i32;
+extern fn grl_model_material_count(id: u64) -> i32;
+extern fn grl_get_model_bounding_box(id: u64, out: BoundingBox&) -> bool;
+extern fn grl_draw_model(id: u64, x: f32, y: f32, z: f32, scale: f32, rgba: u32) -> bool;
+extern fn grl_draw_model_ex(id: u64, x: f32, y: f32, z: f32, ax: f32, ay: f32, az: f32,
+                            angle: f32, sx: f32, sy: f32, sz: f32, rgba: u32) -> bool;
+extern fn grl_draw_model_wires(id: u64, x: f32, y: f32, z: f32, scale: f32, rgba: u32) -> bool;
+extern fn grl_draw_model_wires_ex(id: u64, x: f32, y: f32, z: f32, ax: f32, ay: f32, az: f32,
+                                  angle: f32, sx: f32, sy: f32, sz: f32, rgba: u32) -> bool;
+
+// Loading requires an initialized window. id == 0 reports failure (including
+// unavailable files, invalid paths, native load failure or the model limit).
+fn load_model(path: const u8[:]) -> Model {
+    return Model { grl_load_model(path) };
+}
+fn gen_model_cube(width: f32, height: f32, length: f32) -> Model {
+    return Model { grl_gen_model_cube(width, height, length) };
+}
+fn is_model_valid(model: Model) -> bool {
+    return grl_is_model_valid(model.id);
+}
+fn unload_model(model: Model) -> bool {
+    return grl_unload_model(model.id);
+}
+fn unload_all_models() -> i32 {
+    return grl_unload_all_models();
+}
+fn model_mesh_count(model: Model) -> i32 {
+    return grl_model_mesh_count(model.id);
+}
+fn model_material_count(model: Model) -> i32 {
+    return grl_model_material_count(model.id);
+}
+fn get_model_bounding_box(model: Model) -> BoundingBox, bool {
+    var out = BoundingBox { .. };
+    let valid = grl_get_model_bounding_box(model.id, out);
+    return out, valid;
+}
+fn draw_model(model: Model, position: Vector3, scale: f32, tint: Color) -> bool {
+    return grl_draw_model(model.id, position.x, position.y, position.z, scale, color_rgba(tint));
+}
+// DrawModelEx rotation angles are DEGREES, not raymath radians.
+fn draw_model_ex(model: Model, position: Vector3, axis: Vector3, angle: f32, scale: Vector3, tint: Color) -> bool {
+    return grl_draw_model_ex(model.id, position.x, position.y, position.z, axis.x, axis.y, axis.z,
+                              angle, scale.x, scale.y, scale.z, color_rgba(tint));
+}
+fn draw_model_wires(model: Model, position: Vector3, scale: f32, tint: Color) -> bool {
+    return grl_draw_model_wires(model.id, position.x, position.y, position.z, scale, color_rgba(tint));
+}
+fn draw_model_wires_ex(model: Model, position: Vector3, axis: Vector3, angle: f32, scale: Vector3, tint: Color) -> bool {
+    return grl_draw_model_wires_ex(model.id, position.x, position.y, position.z, axis.x, axis.y, axis.z,
+                                    angle, scale.x, scale.y, scale.z, color_rgba(tint));
 }

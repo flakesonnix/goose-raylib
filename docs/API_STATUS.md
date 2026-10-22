@@ -11,7 +11,7 @@ Status values:
 | raylib C API | Goose name | Module | Status | Note |
 |---|---|---|---|---|
 | `InitWindow` | `init_window` | window | implemented | tested under Xvfb (exit 0) |
-| `CloseWindow` | `close_window` | window | implemented | tested under Xvfb (exit 0) |
+| `CloseWindow` | `close_window`, `CloseWindow` | window | implemented | releases managed models before closing GL; repeated close and reopen tested |
 | `WindowShouldClose` | `window_should_close` | window | implemented | tested under Xvfb (exit 0) |
 | `SetTargetFPS` | `set_target_fps` | window | implemented | tested under Xvfb (exit 0) |
 | `SetWindowTitle` | `set_window_title` | window | implemented | via C adapter (rl_set_window_title) |
@@ -125,10 +125,10 @@ table of up to 64 loaded Sounds and hands out numeric handles.
 
 ## Phase D — 3D
 
-This is the first 3D milestone, **not all of Phase D**. The backend is now
+These are incremental 3D milestones, **not all of Phase D**. The backend is
 raylib **6.2**, tag `6.2`, commit `02566453880e06bec97f5b8160fa6fe1e98397ca`.
 Both the Nix lock and CMake fallback select this revision. The tables below
-inventory the added camera/primitive surface, not the entire public header.
+inventory the added camera/primitive/model surface, not the entire public header.
 
 | raylib C API | Goose name | Status | Coverage / difference |
 |---|---|---|---|
@@ -159,10 +159,53 @@ inventory the added camera/primitive surface, not the entire public header.
 | `DrawCircle3D`, `DrawTriangleStrip3D` | — | planned | Remaining 3D primitive APIs. |
 | `UpdateCamera`, `CameraMode` | — | planned | Automatic input-driven camera modes. Use `update_camera_pro` for explicit movement. |
 | `GetWorldToScreenEx`, `GetScreenToWorldRayEx` | — | planned | Explicit viewport variants. |
-| Meshes, models, animations | — | planned | Need ownership-checked resource adapters; not included here. |
+| `Model` | `Model` | implemented | Read-only u64 generation token; native meshes/materials stay in C. |
+| `LoadModel` | `load_model` | implemented | Real OBJ/MTL/PNG loading/rendering tested; checked slice paths and failure cleanup. Other native file formats are untested. |
+| `GenMeshCube` + `LoadModelFromMesh` | `gen_model_cube` | implemented | Convenience that transfers a generated mesh into an owned model; not standalone mesh bindings. |
+| `IsModelValid` | `is_model_valid` | implemented | Validates slot/generation/window before checking native model; stale/reused IDs rejected. |
+| `UnloadModel` | `unload_model` | implemented | Returns bool; releases owned material GPU resources in addition to raw raylib model cleanup. |
+| `GetModelBoundingBox` | `get_model_bounding_box` | implemented | Returns bounds and bool; unaligned output/canaries and known mesh bounds tested. |
+| `DrawModel`, `DrawModelEx` | `draw_model`, `draw_model_ex` | implemented | Real framebuffer pixel assertions for file textures/tints and a nonuniform rotated transform. |
+| `DrawModelWires`, `DrawModelWiresEx` | `draw_model_wires`, `draw_model_wires_ex` | implemented | Both invoked in real frames; stale-handle rejection tested. No exhaustive wireframe pixel oracle. |
+| Model table helpers (no direct C counterparts) | `model_mesh_count`, `model_material_count`, `unload_all_models`, `MAX_MODELS` | implemented | 64-model capacity; cleanup count, aliases and generation retirement tested. |
+| Standalone meshes, arbitrary mesh upload/generation, model animations | — | planned | No borrowed native mesh/material handles exposed. |
 | Shaders, materials, render textures | — | planned | Not included here. |
 | `raymath.h`, quaternions, matrix arithmetic | `raylib.raymath` module, `raymath::` namespace | implemented / planned | 25 tested functions; all 146 C functions inventoried separately in `RAYMATH_STATUS.md`. |
-| `rlgl.h` public API | — | planned | Only the test helper uses it to flush the real framebuffer before readback. |
+| `rlgl.h` public API | — | planned | Used internally for default-resource IDs and test framebuffer/GPU-resource checks; no Goose bindings. |
+
+### Model ownership and failures
+
+`Model { let id: u64 }` is an 8-byte value. The high 32 bits hold a generation,
+the low 32 bits a one-based slot; zero is invalid. Copies alias one model.
+An unloaded token never becomes valid again when that slot is reused. Slots
+retire rather than wrap an exhausted generation. Tokens are checked handles,
+not a security boundary against code deliberately reconstructing a live ID.
+
+Models require an initialized window and remain main-thread-only. `load_model`
+returns `Model { 0 }` for missing/invalid paths, failed native loads or capacity
+exhaustion. Empty paths, embedded NULs and paths at least 4096 bytes long are
+rejected. `gen_model_cube` also rejects non-positive/non-finite dimensions.
+Invalid/stale draw and unload calls return `false`, counts return zero, and
+`get_model_bounding_box` returns zeroed bounds with `false`. Drawing rejects
+non-finite transforms; frame/mode ordering remains the caller's responsibility.
+The `_ex` angle is **degrees**, while raymath angles are radians. Bounds follow
+the model's stored transform, not per-draw position/scale/rotation.
+
+The adapter owns the model's meshes and resources referenced by its material
+maps. Unlike raw `UnloadModel`, it also releases non-default textures/shaders,
+deduplicating IDs shared within the model. There is no API to attach external
+materials/textures or borrow its meshes. Explicit `close_window()` and its
+`CloseWindow()` compatibility spelling release models before destroying GL;
+generations survive context recreation. This does not add destructors or
+repair legacy texture/sound lifetimes. Raw C window manipulation bypasses
+this contract and is unsupported.
+
+Tests cover actual file loading, slice subslices, rejected paths, empty OBJ
+failure cleanup, table exhaustion, slot reuse, generation exhaustion, context
+shutdown/reopen, and deletion of real mesh buffers, material textures and a
+shared test shader while another model and raylib defaults survive. Only
+OBJ/MTL/PNG and generated cubes have format coverage; other raylib loaders
+and malformed-file robustness are not claimed.
 
 ### Verification limits
 
@@ -170,7 +213,8 @@ inventory the added camera/primitive surface, not the entire public header.
   external-package imports, and real Xvfb/llvmpipe rendering. Every new drawing
   wrapper is invoked in a frame; per-primitive visual correctness beyond the
   cube's pixel assertions is not exhaustively checked.
-- Graphics tests run for three frames; `cube3d.goose` ends after 120 frames.
+- Primitive graphics tests run for three frames; model tests use bounded
+  frames plus a context reopen. Both 3D examples end after 120 frames.
 - `main_thread_only = true` is enforced by a negative compiler test.
 - **JIT remains blocked in the existing local Goose build:** its embedded
   TinyCC cannot find `stdint.h` on NixOS. Package symbol-library construction
