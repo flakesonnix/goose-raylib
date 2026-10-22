@@ -10,6 +10,10 @@ const char *rl_to_c_string(goose_slice_u8 s) {
     return rl_adapter_buffer;
 }
 
+void rl_init_window(int width, int height, goose_slice_u8 title) {
+    InitWindow(width, height, rl_to_c_string(title));
+}
+
 void rl_draw_text(goose_slice_u8 text, int x, int y, int fontSize, Color color) {
     DrawText(rl_to_c_string(text), x, y, fontSize, color);
 }
